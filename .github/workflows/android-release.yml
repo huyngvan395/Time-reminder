@@ -42,6 +42,35 @@ jobs:
         run: |
           flutter analyze --no-fatal-infos
           flutter test
+        
+      - name: Configure Gradle Maven Repositories
+        run: |
+          mkdir -p ~/.gradle/init.d
+          cat << 'EOF' > ~/.gradle/init.d/repos.gradle
+          beforeSettings { settings ->
+              settings.pluginManagement {
+                  repositories {
+                      mavenCentral()
+                      google()
+                      gradlePluginPortal()
+                  }
+              }
+          }
+          allprojects {
+              buildscript {
+                  repositories {
+                      mavenCentral()
+                      google()
+                      gradlePluginPortal()
+                  }
+              }
+              repositories {
+                  mavenCentral()
+                  google()
+                  gradlePluginPortal()
+              }
+          }
+          EOF
 
       - name: Build Android Release APK
         run: flutter build apk --release --android-skip-build-dependency-validation
