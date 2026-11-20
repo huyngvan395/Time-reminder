@@ -7,7 +7,7 @@
 
   <p>
     <img src="https://github.com/huyngvan395/Time-reminder/actions/workflows/android-release.yml/badge.svg" alt="Build Status" />
-    <!-- VERSION_BADGE_START --><img src="https://img.shields.io/badge/Phiên_bản-v1.0.7-38BDF8?style=flat-square" alt="Latest Version" /><!-- VERSION_BADGE_END -->
+    <!-- VERSION_BADGE_START --><img src="https://img.shields.io/badge/Phiên_bản-v1.0.8-38BDF8?style=flat-square" alt="Latest Version" /><!-- VERSION_BADGE_END -->
     <img src="https://img.shields.io/badge/Nền_tảng-Android_6.0+-818CF8?style=flat-square" alt="Platform" />
     <img src="https://img.shields.io/badge/Flutter-3.x_Dart_3-02569B?style=flat-square&logo=flutter" alt="Flutter" />
   </p>
@@ -20,9 +20,9 @@
 Cài đặt trực tiếp bản phát hành chính thức mới nhất của **ChronoGlass** (được biên dịch tự động qua GitHub Actions):
 
 <!-- RELEASE_INFO_START -->
-- **Phiên bản mới nhất:** `v1.0.7`
+- **Phiên bản mới nhất:** `v1.0.8`
 - **Cập nhật lần cuối:** `20/11/2026`
-- **Tải trực tiếp file cài đặt:** 👉 **[Tải ChronoGlass-v1.0.7.apk](https://github.com/huyngvan395/Time-reminder/releases/download/v1.0.7/ChronoGlass-v1.0.7.apk)**
+- **Tải trực tiếp file cài đặt:** 👉 **[Tải ChronoGlass-v1.0.8.apk](https://github.com/huyngvan395/Time-reminder/releases/download/v1.0.8/ChronoGlass-v1.0.8.apk)**
 - **Trang tổng hợp các bản phát hành:** [GitHub Releases](https://github.com/huyngvan395/Time-reminder/releases)
 <!-- RELEASE_INFO_END -->
 
