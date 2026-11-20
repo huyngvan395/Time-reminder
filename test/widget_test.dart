@@ -117,6 +117,20 @@ void main() {
 
       final fromJson = ReminderModel.fromBackupJson(original.toBackupJson());
       expect(fromJson, original);
+
+      // Legacy standard-mode JSON & DB rows automatically upgrade to strongAlarm
+      final legacyJson = Map<String, dynamic>.from(original.toBackupJson())
+        ..['alertMode'] = 'standard';
+      expect(
+        ReminderModel.fromBackupJson(legacyJson).alertMode,
+        AlertMode.strongAlarm,
+      );
+      final legacyDb = Map<String, dynamic>.from(original.toDbMap())
+        ..['alert_mode'] = 0;
+      expect(
+        ReminderModel.fromDbMap(legacyDb).alertMode,
+        AlertMode.strongAlarm,
+      );
     });
   });
 

@@ -8,12 +8,14 @@ class ReminderState extends Equatable {
   final ReminderFilter filter;
   final bool isLoading;
   final String? error;
+  final int revision;
 
   const ReminderState({
     this.reminders = const [],
     this.filter = ReminderFilter.all,
     this.isLoading = false,
     this.error,
+    this.revision = 0,
   });
 
   /// Active, uncompleted reminders sorted chronologically.
@@ -44,9 +46,14 @@ class ReminderState extends Equatable {
       case ReminderFilter.all:
         return base;
       case ReminderFilter.today:
-        return base.where((r) => DateTimeUtils.isSameDay(r.scheduledAt, now)).toList();
+        return base
+            .where((r) => DateTimeUtils.isSameDay(r.scheduledAt, now))
+            .toList();
       case ReminderFilter.upcoming:
-        return base.where((r) => r.scheduledAt.isAfter(now)).toList();
+        return base
+            .where((r) =>
+                r.scheduledAt.isAfter(now.subtract(const Duration(seconds: 30))))
+            .toList();
       case ReminderFilter.important:
         return base.where((r) => r.isImportant).toList();
     }
@@ -73,15 +80,17 @@ class ReminderState extends Equatable {
     ReminderFilter? filter,
     bool? isLoading,
     String? error,
+    int? revision,
   }) {
     return ReminderState(
-      reminders: reminders ?? this.reminders,
+      reminders: reminders != null ? List<Reminder>.of(reminders) : this.reminders,
       filter: filter ?? this.filter,
       isLoading: isLoading ?? this.isLoading,
       error: error,
+      revision: revision ?? this.revision,
     );
   }
 
   @override
-  List<Object?> get props => [reminders, filter, isLoading, error];
+  List<Object?> get props => [reminders, filter, isLoading, error, revision];
 }

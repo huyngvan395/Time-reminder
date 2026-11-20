@@ -85,29 +85,25 @@ class _MainShellScreenState extends State<MainShellScreen> {
       return;
     }
 
-    if (event.isStrongAlarm || target.alertMode == AlertMode.strongAlarm) {
-      final r = target;
-      Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          fullscreenDialog: true,
-          builder: (_) => FullScreenAlarmScreen(
-            reminder: r,
-            strings: s,
-            globalDefaultSoundId: settings.defaultAlarmSoundId,
-            onDismissed: () {
-              reminderBloc.add(CompleteReminder(r, locale: s.locale));
-              context.read<HistoryCubit>().loadHistory();
-            },
-            onSnoozed: (mins) {
-              reminderBloc.add(SnoozeReminder(r, minutes: mins, locale: s.locale));
-              context.read<HistoryCubit>().loadHistory();
-            },
-          ),
+    final r = target;
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        fullscreenDialog: true,
+        builder: (_) => FullScreenAlarmScreen(
+          reminder: r,
+          strings: s,
+          globalDefaultSoundId: settings.defaultAlarmSoundId,
+          onDismissed: () {
+            reminderBloc.add(CompleteReminder(r, locale: s.locale));
+            context.read<HistoryCubit>().loadHistory();
+          },
+          onSnoozed: (mins) {
+            reminderBloc.add(SnoozeReminder(r, minutes: mins, locale: s.locale));
+            context.read<HistoryCubit>().loadHistory();
+          },
         ),
-      );
-    } else {
-      CreateEditReminderSheet.show(context, existing: target);
-    }
+      ),
+    );
   }
 
   @override

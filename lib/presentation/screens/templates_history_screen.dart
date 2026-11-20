@@ -5,7 +5,6 @@ import '../../core/localization/app_strings.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/date_time_utils.dart';
 import '../../domain/entities/history_log.dart';
-import '../../domain/entities/reminder.dart';
 import '../../domain/entities/reminder_template.dart';
 import '../bloc/history/history_cubit.dart';
 import '../bloc/settings/settings_cubit.dart';
@@ -79,12 +78,11 @@ class TemplatesHistoryScreen extends StatelessWidget {
                                 child: Icon(cat.icon, color: cat.color, size: 17),
                               ),
                               const Spacer(),
-                              if (tpl.alertMode == AlertMode.strongAlarm)
-                                const Icon(
-                                  Icons.alarm_on_rounded,
-                                  size: 16,
-                                  color: AppColors.auroraRose,
-                                ),
+                              Icon(
+                                Icons.alarm_rounded,
+                                size: 16,
+                                color: cat.color.withValues(alpha: 0.85),
+                              ),
                             ],
                           ),
                           const SizedBox(height: 10),

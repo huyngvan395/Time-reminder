@@ -114,7 +114,7 @@ class ReminderModel extends Reminder {
       customIntervalUnit: CustomIntervalUnit.values[(map['custom_interval_unit'] as int?) ?? 0],
       preReminderMinutes: preRaw.map((e) => e as int).toList(),
       categoryId: (map['category_id'] as String?) ?? 'personal',
-      alertMode: AlertMode.values[(map['alert_mode'] as int?) ?? 0],
+      alertMode: AlertMode.strongAlarm,
       dismissChallenge: DismissChallenge.values[(map['dismiss_challenge'] as int?) ?? 0],
       snoozeIntervalMinutes: (map['snooze_interval_minutes'] as int?) ?? 10,
       maxSnoozeCount: (map['max_snooze_count'] as int?) ?? 3,
@@ -186,10 +186,7 @@ class ReminderModel extends Reminder {
           .map((e) => e as int)
           .toList(),
       categoryId: (json['categoryId'] as String?) ?? 'personal',
-      alertMode: AlertMode.values.firstWhere(
-        (e) => e.name == json['alertMode'],
-        orElse: () => AlertMode.standard,
-      ),
+      alertMode: AlertMode.strongAlarm,
       dismissChallenge: DismissChallenge.values.firstWhere(
         (e) => e.name == json['dismissChallenge'],
         orElse: () => DismissChallenge.slide,

@@ -76,7 +76,6 @@ class _CreateEditReminderSheetState extends State<CreateEditReminderSheet> {
   CustomIntervalUnit _customIntervalUnit = CustomIntervalUnit.days;
   late Set<int> _preReminderMinutes;
   late String _categoryId;
-  late AlertMode _alertMode;
   late DismissChallenge _dismissChallenge;
   late int _snoozeIntervalMinutes;
   late int _maxSnoozeCount;
@@ -136,7 +135,6 @@ class _CreateEditReminderSheetState extends State<CreateEditReminderSheet> {
         (e?.preReminderMinutes ?? t?.preReminderMinutes ?? const <int>[])
             .toSet();
     _categoryId = e?.categoryId ?? t?.categoryId ?? 'personal';
-    _alertMode = e?.alertMode ?? t?.alertMode ?? AlertMode.standard;
     _dismissChallenge =
         e?.dismissChallenge ?? t?.dismissChallenge ?? DismissChallenge.slide;
     _snoozeIntervalMinutes =
@@ -327,7 +325,7 @@ class _CreateEditReminderSheetState extends State<CreateEditReminderSheet> {
         customIntervalUnit: _customIntervalUnit,
         preReminderMinutes: preList,
         categoryId: _categoryId,
-        alertMode: _alertMode,
+        alertMode: AlertMode.strongAlarm,
         dismissChallenge: _dismissChallenge,
         snoozeIntervalMinutes: _snoozeIntervalMinutes,
         maxSnoozeCount: _maxSnoozeCount,
@@ -363,7 +361,7 @@ class _CreateEditReminderSheetState extends State<CreateEditReminderSheet> {
               customIntervalUnit: _customIntervalUnit,
               preReminderMinutes: preList,
               categoryId: _categoryId,
-              alertMode: _alertMode,
+              alertMode: AlertMode.strongAlarm,
               dismissChallenge: _dismissChallenge,
               snoozeIntervalMinutes: _snoozeIntervalMinutes,
               maxSnoozeCount: _maxSnoozeCount,
@@ -928,50 +926,8 @@ class _CreateEditReminderSheetState extends State<CreateEditReminderSheet> {
                                 );
                               }).toList(),
                             ),
+                            // Ringtone Picker Tile
                             const SizedBox(height: 18),
-
-                            // Alert Intensity Mode
-                            Text(
-                              s.alertModeLabel,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleSmall
-                                  ?.copyWith(fontWeight: FontWeight.w700),
-                            ),
-                            const SizedBox(height: 8),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: _AlertModeCard(
-                                    title: s.alertStandard,
-                                    desc: s.alertStandardDesc,
-                                    icon: Icons.notifications_rounded,
-                                    color: AppColors.auroraCyan,
-                                    selected: _alertMode == AlertMode.standard,
-                                    onTap: () => setState(
-                                        () => _alertMode = AlertMode.standard),
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: _AlertModeCard(
-                                    title: s.alertStrong,
-                                    desc: s.alertStrongDesc,
-                                    icon: Icons.alarm_on_rounded,
-                                    color: AppColors.auroraRose,
-                                    selected:
-                                        _alertMode == AlertMode.strongAlarm,
-                                    onTap: () => setState(() =>
-                                        _alertMode = AlertMode.strongAlarm),
-                                  ),
-                                ),
-                              ],
-                            ),
-
-                            // Per-Reminder Ringtone Picker Tile
-                            const SizedBox(height: 14),
                             Text(
                               s.soundLabel,
                               maxLines: 1,
@@ -1018,49 +974,48 @@ class _CreateEditReminderSheetState extends State<CreateEditReminderSheet> {
                               ),
                             ),
 
-                            if (_alertMode == AlertMode.strongAlarm) ...[
-                              const SizedBox(height: 14),
-                              Text(
-                                s.dismissChallengeLabel,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .titleSmall
-                                    ?.copyWith(fontWeight: FontWeight.w700),
-                              ),
-                              const SizedBox(height: 8),
-                              Wrap(
-                                spacing: 8,
-                                runSpacing: 8,
-                                children: [
-                                  _RecChip(
-                                    label: s.challengeSlide,
-                                    selected: _dismissChallenge ==
-                                        DismissChallenge.slide,
-                                    onTap: () => setState(() =>
-                                        _dismissChallenge =
-                                            DismissChallenge.slide),
-                                  ),
-                                  _RecChip(
-                                    label: s.challengeHold,
-                                    selected: _dismissChallenge ==
-                                        DismissChallenge.hold3Sec,
-                                    onTap: () => setState(() =>
-                                        _dismissChallenge =
-                                            DismissChallenge.hold3Sec),
-                                  ),
-                                  _RecChip(
-                                    label: s.challengeMath,
-                                    selected: _dismissChallenge ==
-                                        DismissChallenge.quickMath,
-                                    onTap: () => setState(() =>
-                                        _dismissChallenge =
-                                            DismissChallenge.quickMath),
-                                  ),
-                                ],
-                              ),
-                            ],
+                            // Dismiss Challenge (always visible for Strong Alarm)
+                            const SizedBox(height: 16),
+                            Text(
+                              s.dismissChallengeLabel,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleSmall
+                                  ?.copyWith(fontWeight: FontWeight.w700),
+                            ),
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                _RecChip(
+                                  label: s.challengeSlide,
+                                  selected: _dismissChallenge ==
+                                      DismissChallenge.slide,
+                                  onTap: () => setState(() =>
+                                      _dismissChallenge =
+                                          DismissChallenge.slide),
+                                ),
+                                _RecChip(
+                                  label: s.challengeHold,
+                                  selected: _dismissChallenge ==
+                                      DismissChallenge.hold3Sec,
+                                  onTap: () => setState(() =>
+                                      _dismissChallenge =
+                                          DismissChallenge.hold3Sec),
+                                ),
+                                _RecChip(
+                                  label: s.challengeMath,
+                                  selected: _dismissChallenge ==
+                                      DismissChallenge.quickMath,
+                                  onTap: () => setState(() =>
+                                      _dismissChallenge =
+                                          DismissChallenge.quickMath),
+                                ),
+                              ],
+                            ),
 
                             const SizedBox(height: 14),
                             Text(
@@ -1247,74 +1202,6 @@ class _RecChip extends StatelessWidget {
         HapticFeedback.selectionClick();
         onTap();
       },
-    );
-  }
-}
-
-class _AlertModeCard extends StatelessWidget {
-  final String title;
-  final String desc;
-  final IconData icon;
-  final Color color;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _AlertModeCard({
-    required this.title,
-    required this.desc,
-    required this.icon,
-    required this.color,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () {
-        HapticFeedback.selectionClick();
-        onTap();
-      },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          color: color.withValues(alpha: selected ? 0.22 : 0.06),
-          border: Border.all(
-            color: selected ? color : color.withValues(alpha: 0.22),
-            width: selected ? 1.6 : 1,
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, color: color, size: 22),
-            const SizedBox(height: 8),
-            Text(
-              title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontWeight: FontWeight.w700,
-                fontSize: 13.5,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              desc,
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 11,
-                color: Theme.of(context).brightness == Brightness.dark
-                    ? AppColors.darkTextSecondary
-                    : AppColors.lightTextSecondary,
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

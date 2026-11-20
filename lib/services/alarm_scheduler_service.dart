@@ -19,7 +19,7 @@ class NotificationInteractionEvent {
   const NotificationInteractionEvent({
     required this.reminderId,
     this.actionId,
-    required this.isStrongAlarm,
+    this.isStrongAlarm = true,
   });
 }
 
@@ -36,12 +36,13 @@ Future<void> chronoGlassAlarmCallback(int id, Map<String, dynamic> params) async
     final payload = jsonEncode({
       'reminderId': params['reminderId'],
       'isStrongAlarm': true,
+      'alarmSoundId': params['alarmSoundId'],
     });
 
     await plugin.show(
       id,
       title,
-      body.isEmpty ? 'Báo thức mạnh mẽ đang reo' : body,
+      body.isEmpty ? 'Báo thức ChronoGlass đang reo' : body,
       NotificationDetails(
         android: AndroidNotificationDetails(
           AppConstants.strongAlarmChannelId,
@@ -69,7 +70,9 @@ Future<void> chronoGlassAlarmCallback(int id, Map<String, dynamic> params) async
 /// Top-level handler for notification action buttons tapped in the background.
 @pragma('vm:entry-point')
 void chronoGlassNotificationBgResponse(NotificationResponse response) {
-  debugPrint('Background notification action: ${response.actionId} -> ${response.payload}');
+  debugPrint(
+    'Background notification action: ${response.actionId} -> ${response.payload}',
+  );
 }
 
 class AlarmSchedulerService {
@@ -149,17 +152,6 @@ class AlarmSchedulerService {
     if (androidPlugin == null) return;
 
     await androidPlugin.createNotificationChannel(
-      const AndroidNotificationChannel(
-        AppConstants.standardChannelId,
-        AppConstants.standardChannelName,
-        description: AppConstants.standardChannelDesc,
-        importance: Importance.high,
-        playSound: true,
-        enableVibration: true,
-      ),
-    );
-
-    await androidPlugin.createNotificationChannel(
       AndroidNotificationChannel(
         AppConstants.strongAlarmChannelId,
         AppConstants.strongAlarmChannelName,
@@ -200,14 +192,15 @@ class AlarmSchedulerService {
       return NotificationInteractionEvent(
         reminderId: reminderId,
         actionId: response.actionId,
-        isStrongAlarm: data['isStrongAlarm'] as bool? ?? false,
+        isStrongAlarm: true,
       );
     } catch (_) {
       return null;
     }
   }
 
-  /// Schedules the primary reminder/alarm plus any configured pre-reminders.
+  /// Schedules every reminder unconditionally as a Strong Alarm (fullScreenIntent + RTC_WAKEUP)
+  /// plus any configured pre-reminders, falling back gracefully if exact-alarm permission is pending.
   Future<void> scheduleReminder(Reminder reminder, {String locale = 'vi'}) async {
     await cancelReminder(reminder);
     if (!reminder.isActive || reminder.isCompleted) return;
@@ -218,7 +211,7 @@ class AlarmSchedulerService {
     final tzScheduled = tz.TZDateTime.from(reminder.scheduledAt, tz.local);
     final payload = jsonEncode({
       'reminderId': reminder.id,
-      'isStrongAlarm': reminder.alertMode == AlertMode.strongAlarm,
+      'isStrongAlarm': true,
       'alarmSoundId': reminder.alarmSoundId,
     });
 
@@ -227,117 +220,98 @@ class AlarmSchedulerService {
         ? 'Báo lại ${reminder.snoozeIntervalMinutes}p'
         : 'Snooze ${reminder.snoozeIntervalMinutes}m';
 
-    if (reminder.alertMode == AlertMode.strongAlarm) {
+    final details = NotificationDetails(
+      android: AndroidNotificationDetails(
+        AppConstants.strongAlarmChannelId,
+        AppConstants.strongAlarmChannelName,
+        channelDescription: AppConstants.strongAlarmChannelDesc,
+        importance: Importance.max,
+        priority: Priority.max,
+        category: AndroidNotificationCategory.alarm,
+        fullScreenIntent: true,
+        ongoing: true,
+        autoCancel: false,
+        playSound: true,
+        sound: const RawResourceAndroidNotificationSound('aurora_chime'),
+        audioAttributesUsage: AudioAttributesUsage.alarm,
+        vibrationPattern: Int64List.fromList([0, 600, 400, 800, 400]),
+        actions: [
+          AndroidNotificationAction(
+            AppConstants.actionSnooze10,
+            snoozeLabel,
+            showsUserInterface: true,
+          ),
+          AndroidNotificationAction(
+            AppConstants.actionComplete,
+            completeLabel,
+            showsUserInterface: true,
+          ),
+        ],
+      ),
+      iOS: const DarwinNotificationDetails(
+        presentAlert: true,
+        presentBadge: true,
+        presentSound: true,
+        interruptionLevel: InterruptionLevel.timeSensitive,
+      ),
+    );
+
+    final body = reminder.notes.isEmpty
+        ? (locale == 'vi' ? 'Báo thức • ChronoGlass' : 'Alarm • ChronoGlass')
+        : reminder.notes;
+
+    try {
       await _notifications.zonedSchedule(
         reminder.notificationId,
         reminder.title,
-        reminder.notes.isEmpty
-            ? (locale == 'vi' ? 'Báo thức mạnh mẽ • ChronoGlass' : 'Strong Alarm • ChronoGlass')
-            : reminder.notes,
+        body,
         tzScheduled,
-        NotificationDetails(
-          android: AndroidNotificationDetails(
-            AppConstants.strongAlarmChannelId,
-            AppConstants.strongAlarmChannelName,
-            channelDescription: AppConstants.strongAlarmChannelDesc,
-            importance: Importance.max,
-            priority: Priority.max,
-            category: AndroidNotificationCategory.alarm,
-            fullScreenIntent: true,
-            ongoing: true,
-            autoCancel: false,
-            playSound: true,
-            sound: const RawResourceAndroidNotificationSound('aurora_chime'),
-            audioAttributesUsage: AudioAttributesUsage.alarm,
-            vibrationPattern: Int64List.fromList([0, 600, 400, 800, 400]),
-            actions: [
-              AndroidNotificationAction(
-                AppConstants.actionSnooze10,
-                snoozeLabel,
-                showsUserInterface: true,
-              ),
-              AndroidNotificationAction(
-                AppConstants.actionComplete,
-                completeLabel,
-                showsUserInterface: true,
-              ),
-            ],
-          ),
-          iOS: const DarwinNotificationDetails(
-            presentAlert: true,
-            presentBadge: true,
-            presentSound: true,
-            interruptionLevel: InterruptionLevel.timeSensitive,
-          ),
-        ),
+        details,
         androidScheduleMode: AndroidScheduleMode.alarmClock,
         uiLocalNotificationDateInterpretation:
             UILocalNotificationDateInterpretation.absoluteTime,
         payload: payload,
       );
-
-      // Backup exact RTC_WAKEUP via AndroidAlarmManagerPlus for aggressive OEM devices
-      if (Platform.isAndroid) {
-        try {
-          await AndroidAlarmManager.oneShotAt(
-            reminder.scheduledAt,
-            reminder.notificationId,
-            chronoGlassAlarmCallback,
-            exact: true,
-            wakeup: true,
-            alarmClock: true,
-            rescheduleOnReboot: true,
-            params: {
-              'reminderId': reminder.id,
-              'title': reminder.title,
-              'notes': reminder.notes,
-            },
-          );
-        } catch (e) {
-          debugPrint('AndroidAlarmManager oneShotAt warning: $e');
-        }
+    } catch (e) {
+      debugPrint('Exact alarmClock schedule fallback: $e');
+      try {
+        await _notifications.zonedSchedule(
+          reminder.notificationId,
+          reminder.title,
+          body,
+          tzScheduled,
+          details,
+          androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+          uiLocalNotificationDateInterpretation:
+              UILocalNotificationDateInterpretation.absoluteTime,
+          payload: payload,
+        );
+      } catch (fallbackErr) {
+        debugPrint('Inexact fallback schedule warning: $fallbackErr');
       }
-    } else {
-      await _notifications.zonedSchedule(
-        reminder.notificationId,
-        reminder.title,
-        reminder.notes.isEmpty
-            ? (locale == 'vi' ? 'Đã đến giờ nhắc nhở' : 'Time for your reminder')
-            : reminder.notes,
-        tzScheduled,
-        NotificationDetails(
-          android: AndroidNotificationDetails(
-            AppConstants.standardChannelId,
-            AppConstants.standardChannelName,
-            channelDescription: AppConstants.standardChannelDesc,
-            importance: Importance.high,
-            priority: Priority.high,
-            playSound: true,
-            enableVibration: true,
-            actions: [
-              AndroidNotificationAction(
-                AppConstants.actionComplete,
-                completeLabel,
-                showsUserInterface: true,
-              ),
-              AndroidNotificationAction(
-                AppConstants.actionSnooze10,
-                snoozeLabel,
-                showsUserInterface: true,
-              ),
-            ],
-          ),
-          iOS: const DarwinNotificationDetails(
-            presentAlert: true,
-            presentBadge: true,
-            presentSound: true,
-          ),
-        ),
-        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-        uiLocalNotificationDateInterpretation:
-            UILocalNotificationDateInterpretation.absoluteTime,
-        payload: payload,
-      );
+    }
+
+    // Backup exact RTC_WAKEUP via AndroidAlarmManagerPlus for aggressive OEM devices
+    if (Platform.isAndroid) {
+      try {
+        await AndroidAlarmManager.oneShotAt(
+          reminder.scheduledAt,
+          reminder.notificationId,
+          chronoGlassAlarmCallback,
+          exact: true,
+          wakeup: true,
+          alarmClock: true,
+          rescheduleOnReboot: true,
+          params: {
+            'reminderId': reminder.id,
+            'title': reminder.title,
+            'notes': reminder.notes,
+            'alarmSoundId': reminder.alarmSoundId,
+          },
+        );
+      } catch (e) {
+        debugPrint('AndroidAlarmManager oneShotAt warning: $e');
+      }
     }
 
     // Schedule Pre-Reminders (Nhắc trước)
@@ -355,40 +329,43 @@ class AlarmSchedulerService {
       final preBody = locale == 'vi'
           ? 'Sắp diễn ra trong $mins phút nữa'
           : 'Starting in $mins minutes';
-      await _notifications.zonedSchedule(
-        reminder.preReminderNotificationId(i),
-        preTitle,
-        preBody,
-        tz.TZDateTime.from(preDt, tz.local),
-        const NotificationDetails(
-          android: AndroidNotificationDetails(
-            AppConstants.preReminderChannelId,
-            AppConstants.preReminderChannelName,
-            channelDescription: AppConstants.preReminderChannelDesc,
-            importance: Importance.high,
-            priority: Priority.high,
+      try {
+        await _notifications.zonedSchedule(
+          reminder.preReminderNotificationId(i),
+          preTitle,
+          preBody,
+          tz.TZDateTime.from(preDt, tz.local),
+          const NotificationDetails(
+            android: AndroidNotificationDetails(
+              AppConstants.preReminderChannelId,
+              AppConstants.preReminderChannelName,
+              channelDescription: AppConstants.preReminderChannelDesc,
+              importance: Importance.high,
+              priority: Priority.high,
+            ),
+            iOS: DarwinNotificationDetails(
+              presentAlert: true,
+              presentSound: true,
+            ),
           ),
-          iOS: DarwinNotificationDetails(
-            presentAlert: true,
-            presentSound: true,
-          ),
-        ),
-        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-        uiLocalNotificationDateInterpretation:
-            UILocalNotificationDateInterpretation.absoluteTime,
-        payload: jsonEncode({
-          'reminderId': reminder.id,
-          'isStrongAlarm': false,
-        }),
-      );
+          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+          uiLocalNotificationDateInterpretation:
+              UILocalNotificationDateInterpretation.absoluteTime,
+          payload: payload,
+        );
+      } catch (e) {
+        debugPrint('Pre-reminder schedule warning: $e');
+      }
     }
   }
 
   Future<void> cancelReminder(Reminder reminder) async {
-    await _notifications.cancel(reminder.notificationId);
-    for (int i = 0; i < 8; i++) {
-      await _notifications.cancel(reminder.preReminderNotificationId(i));
-    }
+    try {
+      await _notifications.cancel(reminder.notificationId);
+      for (int i = 0; i < 8; i++) {
+        await _notifications.cancel(reminder.preReminderNotificationId(i));
+      }
+    } catch (_) {}
     if (Platform.isAndroid) {
       try {
         await AndroidAlarmManager.cancel(reminder.notificationId);
@@ -400,7 +377,9 @@ class AlarmSchedulerService {
     List<Reminder> reminders, {
     String locale = 'vi',
   }) async {
-    await _notifications.cancelAll();
+    try {
+      await _notifications.cancelAll();
+    } catch (_) {}
     for (final reminder in reminders) {
       if (reminder.isActive && !reminder.isCompleted) {
         await scheduleReminder(reminder, locale: locale);

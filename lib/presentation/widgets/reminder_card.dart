@@ -69,9 +69,7 @@ class ReminderCard extends StatelessWidget {
           child: GlassContainer(
             useBlur: false, // Crucial 60fps rule for scrolling ListView items!
             borderRadius: 20,
-            accentTint: reminder.alertMode == AlertMode.strongAlarm
-                ? AppColors.auroraRose
-                : category.color,
+            accentTint: category.color,
             padding: const EdgeInsets.all(16),
             onTap: onTap,
             child: Column(
@@ -132,12 +130,9 @@ class ReminderCard extends StatelessWidget {
                                   TextStyle(
                                     fontSize: 15,
                                     fontWeight: FontWeight.w800,
-                                    color: reminder.alertMode ==
-                                            AlertMode.strongAlarm
-                                        ? AppColors.auroraRose
-                                        : (isDark
-                                            ? AppColors.auroraCyan
-                                            : const Color(0xFF0284C7)),
+                                    color: isDark
+                                        ? AppColors.auroraCyan
+                                        : const Color(0xFF0284C7),
                                   ),
                                 ),
                               ),
@@ -170,15 +165,6 @@ class ReminderCard extends StatelessWidget {
                                   color: isDark
                                       ? AppColors.auroraViolet
                                       : const Color(0xFF6366F1),
-                                ),
-                              ],
-                              if (reminder.alertMode ==
-                                  AlertMode.strongAlarm) ...[
-                                const SizedBox(width: 6),
-                                const Icon(
-                                  Icons.alarm_on_rounded,
-                                  size: 14,
-                                  color: AppColors.auroraRose,
                                 ),
                               ],
                             ],

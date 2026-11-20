@@ -52,7 +52,7 @@ class Reminder extends Equatable {
     this.customIntervalUnit = CustomIntervalUnit.days,
     this.preReminderMinutes = const [],
     this.categoryId = 'personal',
-    this.alertMode = AlertMode.standard,
+    this.alertMode = AlertMode.strongAlarm,
     this.dismissChallenge = DismissChallenge.slide,
     this.snoozeIntervalMinutes = 10,
     this.maxSnoozeCount = 3,

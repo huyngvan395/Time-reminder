@@ -40,7 +40,7 @@ class BootRescheduleReceiver : BroadcastReceiver() {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
                         putExtra("reminder_id", id)
                         putExtra("reminder_title", title)
-                        putExtra("is_alarm_launch", alertMode == 1)
+                        putExtra("is_alarm_launch", true)
                     }
 
                     val requestCode = id.hashCode() and 0x7FFFFFFF
@@ -57,15 +57,9 @@ class BootRescheduleReceiver : BroadcastReceiver() {
                         true
                     }
 
-                    if (alertMode == 1 && canScheduleExact) {
+                    if (canScheduleExact) {
                         val clockInfo = AlarmManager.AlarmClockInfo(triggerAtMs, pendingIntent)
                         alarmManager.setAlarmClock(clockInfo, pendingIntent)
-                    } else if (canScheduleExact) {
-                        alarmManager.setExactAndAllowWhileIdle(
-                            AlarmManager.RTC_WAKEUP,
-                            triggerAtMs,
-                            pendingIntent
-                        )
                     } else {
                         alarmManager.setAndAllowWhileIdle(
                             AlarmManager.RTC_WAKEUP,

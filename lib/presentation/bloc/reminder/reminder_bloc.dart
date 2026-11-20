@@ -1,7 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:uuid/uuid.dart';
 import '../../../core/utils/recurrence_calculator.dart';
 import '../../../domain/entities/history_log.dart';
+import '../../../domain/entities/reminder.dart';
 import '../../../domain/repositories/reminder_repository.dart';
 import '../../../services/alarm_scheduler_service.dart';
 import 'reminder_event.dart';
@@ -31,43 +33,70 @@ class ReminderBloc extends Bloc<ReminderEvent, ReminderState> {
     on<ImportRemindersBackup>(_onImportBackup);
   }
 
+  Future<void> _safeSchedule(Reminder reminder, String locale) async {
+    try {
+      await _scheduler.scheduleReminder(reminder, locale: locale);
+    } catch (e) {
+      debugPrint('Alarm schedule warning (UI state preserved): $e');
+    }
+  }
+
+  Future<void> _safeCancel(Reminder reminder) async {
+    try {
+      await _scheduler.cancelReminder(reminder);
+    } catch (e) {
+      debugPrint('Alarm cancel warning: $e');
+    }
+  }
+
+  Future<void> _emitFreshList(Emitter<ReminderState> emit) async {
+    final list = await _repository.getAllReminders();
+    emit(
+      state.copyWith(
+        reminders: List<Reminder>.of(list),
+        isLoading: false,
+        revision: state.revision + 1,
+      ),
+    );
+  }
+
   Future<void> _onLoad(LoadReminders event, Emitter<ReminderState> emit) async {
     emit(state.copyWith(isLoading: true));
     try {
-      final list = await _repository.getAllReminders();
-      emit(state.copyWith(reminders: list, isLoading: false));
+      await _emitFreshList(emit);
     } catch (e) {
       emit(state.copyWith(isLoading: false, error: e.toString()));
     }
   }
 
   Future<void> _onSave(SaveReminder event, Emitter<ReminderState> emit) async {
-    await _repository.upsertReminder(event.reminder);
-    await _scheduler.scheduleReminder(event.reminder, locale: event.locale);
-    final list = await _repository.getAllReminders();
-    emit(state.copyWith(reminders: list));
+    final normalized = event.reminder.copyWith(alertMode: AlertMode.strongAlarm);
+    await _repository.upsertReminder(normalized);
+    await _safeSchedule(normalized, event.locale);
+    await _emitFreshList(emit);
   }
 
   Future<void> _onSaveBatch(
     SaveBatchReminders event,
     Emitter<ReminderState> emit,
   ) async {
-    await _repository.upsertBatchReminders(event.reminders);
-    for (final r in event.reminders) {
-      await _scheduler.scheduleReminder(r, locale: event.locale);
+    final normalizedList = event.reminders
+        .map((r) => r.copyWith(alertMode: AlertMode.strongAlarm))
+        .toList();
+    await _repository.upsertBatchReminders(normalizedList);
+    for (final r in normalizedList) {
+      await _safeSchedule(r, event.locale);
     }
-    final list = await _repository.getAllReminders();
-    emit(state.copyWith(reminders: list));
+    await _emitFreshList(emit);
   }
 
   Future<void> _onDelete(
     DeleteReminder event,
     Emitter<ReminderState> emit,
   ) async {
-    await _scheduler.cancelReminder(event.reminder);
+    await _safeCancel(event.reminder);
     await _repository.deleteReminder(event.reminder.id);
-    final list = await _repository.getAllReminders();
-    emit(state.copyWith(reminders: list));
+    await _emitFreshList(emit);
   }
 
   Future<void> _onToggleActive(
@@ -76,16 +105,16 @@ class ReminderBloc extends Bloc<ReminderEvent, ReminderState> {
   ) async {
     final updated = event.reminder.copyWith(
       isActive: event.isActive,
+      alertMode: AlertMode.strongAlarm,
       updatedAt: DateTime.now(),
     );
     await _repository.upsertReminder(updated);
     if (event.isActive) {
-      await _scheduler.scheduleReminder(updated, locale: event.locale);
+      await _safeSchedule(updated, event.locale);
     } else {
-      await _scheduler.cancelReminder(updated);
+      await _safeCancel(updated);
     }
-    final list = await _repository.getAllReminders();
-    emit(state.copyWith(reminders: list));
+    await _emitFreshList(emit);
   }
 
   Future<void> _onComplete(
@@ -93,7 +122,7 @@ class ReminderBloc extends Bloc<ReminderEvent, ReminderState> {
     Emitter<ReminderState> emit,
   ) async {
     final now = DateTime.now();
-    await _scheduler.cancelReminder(event.reminder);
+    await _safeCancel(event.reminder);
 
     await _repository.addHistoryLog(
       HistoryLog(
@@ -113,9 +142,9 @@ class ReminderBloc extends Bloc<ReminderEvent, ReminderState> {
     );
 
     if (nextDate != null) {
-      // Advance recurring reminder and reset snooze counter & checklist
       final advanced = event.reminder.copyWith(
         scheduledAt: nextDate,
+        alertMode: AlertMode.strongAlarm,
         currentSnoozeCount: 0,
         isCompleted: false,
         isActive: true,
@@ -125,9 +154,8 @@ class ReminderBloc extends Bloc<ReminderEvent, ReminderState> {
         updatedAt: now,
       );
       await _repository.upsertReminder(advanced);
-      await _scheduler.scheduleReminder(advanced, locale: event.locale);
+      await _safeSchedule(advanced, event.locale);
     } else {
-      // Auto-archive one-time reminder after completion
       final archived = event.reminder.copyWith(
         isCompleted: true,
         isActive: false,
@@ -136,8 +164,7 @@ class ReminderBloc extends Bloc<ReminderEvent, ReminderState> {
       await _repository.upsertReminder(archived);
     }
 
-    final list = await _repository.getAllReminders();
-    emit(state.copyWith(reminders: list));
+    await _emitFreshList(emit);
   }
 
   Future<void> _onSnooze(
@@ -149,6 +176,7 @@ class ReminderBloc extends Bloc<ReminderEvent, ReminderState> {
 
     final updated = event.reminder.copyWith(
       scheduledAt: snoozedAt,
+      alertMode: AlertMode.strongAlarm,
       currentSnoozeCount: event.reminder.currentSnoozeCount + 1,
       isActive: true,
       isCompleted: false,
@@ -156,7 +184,7 @@ class ReminderBloc extends Bloc<ReminderEvent, ReminderState> {
     );
 
     await _repository.upsertReminder(updated);
-    await _scheduler.scheduleReminder(updated, locale: event.locale);
+    await _safeSchedule(updated, event.locale);
 
     await _repository.addHistoryLog(
       HistoryLog(
@@ -171,8 +199,7 @@ class ReminderBloc extends Bloc<ReminderEvent, ReminderState> {
       ),
     );
 
-    final list = await _repository.getAllReminders();
-    emit(state.copyWith(reminders: list));
+    await _emitFreshList(emit);
   }
 
   Future<void> _onToggleChecklist(
@@ -191,8 +218,7 @@ class ReminderBloc extends Bloc<ReminderEvent, ReminderState> {
       updatedAt: DateTime.now(),
     );
     await _repository.upsertReminder(updated);
-    final list = await _repository.getAllReminders();
-    emit(state.copyWith(reminders: list));
+    await _emitFreshList(emit);
   }
 
   void _onChangeFilter(
@@ -207,17 +233,27 @@ class ReminderBloc extends Bloc<ReminderEvent, ReminderState> {
     Emitter<ReminderState> emit,
   ) async {
     final list = await _repository.getAllReminders();
-    await _scheduler.rescheduleAllActive(list, locale: event.locale);
-    emit(state.copyWith(reminders: list));
+    try {
+      await _scheduler.rescheduleAllActive(list, locale: event.locale);
+    } catch (e) {
+      debugPrint('Resync warning: $e');
+    }
+    await _emitFreshList(emit);
   }
 
   Future<void> _onImportBackup(
     ImportRemindersBackup event,
     Emitter<ReminderState> emit,
   ) async {
-    await _repository.replaceAllReminders(event.reminders);
-    await _scheduler.rescheduleAllActive(event.reminders, locale: event.locale);
-    final list = await _repository.getAllReminders();
-    emit(state.copyWith(reminders: list));
+    final normalized = event.reminders
+        .map((r) => r.copyWith(alertMode: AlertMode.strongAlarm))
+        .toList();
+    await _repository.replaceAllReminders(normalized);
+    try {
+      await _scheduler.rescheduleAllActive(normalized, locale: event.locale);
+    } catch (e) {
+      debugPrint('Import reschedule warning: $e');
+    }
+    await _emitFreshList(emit);
   }
 }

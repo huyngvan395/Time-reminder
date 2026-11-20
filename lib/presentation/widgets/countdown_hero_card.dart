@@ -125,9 +125,7 @@ class _CountdownHeroCardState extends State<CountdownHeroCard> {
       useBlur: true,
       borderRadius: 24,
       padding: const EdgeInsets.all(22),
-      accentTint: reminder.alertMode == AlertMode.strongAlarm
-          ? AppColors.auroraRose
-          : catColor,
+      accentTint: catColor,
       onTap: widget.onTap,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -169,38 +167,6 @@ class _CountdownHeroCardState extends State<CountdownHeroCard> {
                   ),
                 ),
               ),
-              if (reminder.alertMode == AlertMode.strongAlarm) ...[
-                const SizedBox(width: 8),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(20),
-                    color: AppColors.auroraRose.withValues(alpha: 0.22),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.notifications_active_rounded,
-                        size: 13,
-                        color: AppColors.auroraRose,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        s.isVi ? 'Báo thức mạnh' : 'Strong Alarm',
-                        maxLines: 1,
-                        softWrap: false,
-                        style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.auroraRose,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
             ],
           ),
           const SizedBox(height: 16),
@@ -222,11 +188,7 @@ class _CountdownHeroCardState extends State<CountdownHeroCard> {
               TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.w800,
-                color: reminder.alertMode == AlertMode.strongAlarm
-                    ? AppColors.auroraRose
-                    : (isDark
-                        ? AppColors.auroraCyan
-                        : const Color(0xFF0284C7)),
+                color: isDark ? AppColors.auroraCyan : const Color(0xFF0284C7),
               ),
             ),
           ),

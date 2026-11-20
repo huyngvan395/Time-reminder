@@ -62,15 +62,6 @@ class AppStrings {
   String get customPreMin => isVi ? 'Tùy chỉnh (phút)' : 'Custom (min)';
   String get categoryLabel => isVi ? 'Danh mục & Thẻ màu' : 'Category & Tag';
   String get addCustomTag => isVi ? '+ Thẻ mới' : '+ New Tag';
-  String get alertModeLabel => isVi ? 'Mức độ cảnh báo' : 'Alert Intensity';
-  String get alertStandard => isVi ? 'Thông báo chuẩn' : 'Standard Notification';
-  String get alertStandardDesc => isVi
-      ? 'Thông báo nổi kèm âm thanh, rung và nút thao tác nhanh.'
-      : 'Heads-up notification with sound, vibration & quick actions.';
-  String get alertStrong => isVi ? 'Báo thức mạnh mẽ' : 'Strong Alarm Mode';
-  String get alertStrongDesc => isVi
-      ? 'Đánh thức màn hình khóa, chuông lặp tăng dần & rung liên tục.'
-      : 'Wakes lock screen, full-screen glass UI, escalating sound & vibration.';
   String get importantFlag => isVi ? 'Đánh dấu quan trọng' : 'Mark as Important';
   String get snoozeConfig => isVi ? 'Cấu hình báo lại (Snooze)' : 'Snooze Configuration';
   String get maxSnooze => isVi ? 'Số lần báo lại tối đa' : 'Max snooze count';
