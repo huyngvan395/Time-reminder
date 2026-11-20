@@ -1,22 +1,21 @@
 package com.chronoglass.app.chronoglass
 
-import android.app.AlarmManager
-import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.database.sqlite.SQLiteDatabase
-import android.os.Build
 import android.util.Log
 
 /**
- * Automatically recalculates and reschedules active alarms from the local SQLite database
- * immediately after device reboot, package update, or timezone/clock change.
+ * Device Reboot & Power-On Recovery Receiver:
+ * 1. Immediately reschedules all upcoming active alarms from SQLite via AlarmTriggerReceiver.scheduleExact().
+ * 2. Immediately catches up and rings any active alarm that occurred while the device was powered off
+ *    (within a 12-hour catch-up window).
  */
 class BootRescheduleReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
         val action = intent?.action ?: return
-        Log.i("ChronoGlassBoot", "Received system broadcast: $action — verifying scheduled alarms.")
+        Log.i("ChronoGlassBoot", "Received system broadcast: $action — recovering scheduled alarms.")
 
         try {
             val dbFile = context.getDatabasePath("chronoglass.db")
@@ -24,54 +23,40 @@ class BootRescheduleReceiver : BroadcastReceiver() {
 
             val db = SQLiteDatabase.openDatabase(dbFile.path, null, SQLiteDatabase.OPEN_READONLY)
             val nowMs = System.currentTimeMillis()
-            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            val catchUpWindowMs = 12L * 60L * 60L * 1000L // 12 hours
+            var missedToRingId: String? = null
+            var missedToRingTitle: String? = null
 
             db.rawQuery(
-                "SELECT id, title, scheduled_at_ms, alert_mode FROM reminders WHERE is_active = 1 AND is_completed = 0 AND scheduled_at_ms > ?",
-                arrayOf(nowMs.toString())
+                "SELECT id, title, scheduled_at_ms FROM reminders WHERE is_active = 1 AND is_completed = 0 ORDER BY scheduled_at_ms ASC",
+                null
             ).use { cursor ->
                 while (cursor.moveToNext()) {
                     val id = cursor.getString(0)
                     val title = cursor.getString(1)
                     val triggerAtMs = cursor.getLong(2)
-                    val alertMode = cursor.getInt(3)
 
-                    val launchIntent = Intent(context, MainActivity::class.java).apply {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                        putExtra("reminder_id", id)
-                        putExtra("reminder_title", title)
-                        putExtra("is_alarm_launch", true)
-                    }
-
-                    val requestCode = id.hashCode() and 0x7FFFFFFF
-                    val pendingIntent = PendingIntent.getActivity(
-                        context,
-                        requestCode,
-                        launchIntent,
-                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                    )
-
-                    val canScheduleExact = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                        alarmManager.canScheduleExactAlarms()
-                    } else {
-                        true
-                    }
-
-                    if (canScheduleExact) {
-                        val clockInfo = AlarmManager.AlarmClockInfo(triggerAtMs, pendingIntent)
-                        alarmManager.setAlarmClock(clockInfo, pendingIntent)
-                    } else {
-                        alarmManager.setAndAllowWhileIdle(
-                            AlarmManager.RTC_WAKEUP,
-                            triggerAtMs,
-                            pendingIntent
-                        )
+                    if (triggerAtMs > nowMs) {
+                        AlarmTriggerReceiver.scheduleExact(context, id, title, triggerAtMs)
+                    } else if (nowMs - triggerAtMs <= catchUpWindowMs && missedToRingId == null) {
+                        // Catch up missed alarm that fired while phone was powered off
+                        missedToRingId = id
+                        missedToRingTitle = title
                     }
                 }
             }
             db.close()
+
+            if (missedToRingId != null) {
+                Log.i("ChronoGlassBoot", "Power-on catch-up ringing missed alarm: $missedToRingId")
+                AlarmTriggerReceiver.triggerNow(
+                    context,
+                    missedToRingId!!,
+                    missedToRingTitle ?: "ChronoGlass Alarm"
+                )
+            }
         } catch (e: Exception) {
-            Log.e("ChronoGlassBoot", "Failed to reschedule alarms on boot: ${e.message}", e)
+            Log.e("ChronoGlassBoot", "Failed to recover alarms on boot: ${e.message}", e)
         }
     }
 }

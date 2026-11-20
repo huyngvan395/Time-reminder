@@ -4,6 +4,7 @@ import '../../core/constants/app_constants.dart';
 import '../../core/localization/app_strings.dart';
 import '../../core/theme/app_colors.dart';
 import '../../domain/entities/reminder.dart';
+import '../../services/alarm_scheduler_service.dart';
 import '../../services/backup_restore_service.dart';
 import '../../services/permission_guard_service.dart';
 import '../../services/ringtone_service.dart';
@@ -284,6 +285,55 @@ class _SettingsScreenState extends State<SettingsScreen>
                       ),
                     ),
                   ],
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(14),
+                      color: AppColors.auroraCyan.withValues(alpha: 0.10),
+                      border: Border.all(
+                        color: AppColors.auroraCyan.withValues(alpha: 0.30),
+                      ),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(
+                          Icons.power_settings_new_rounded,
+                          color: AppColors.auroraCyan,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                s.scheduledPowerOnTitle,
+                                style: const TextStyle(
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.auroraCyan,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                s.scheduledPowerOnDesc,
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  height: 1.35,
+                                  color: Theme.of(context).brightness ==
+                                          Brightness.dark
+                                      ? AppColors.darkTextSecondary
+                                      : AppColors.lightTextSecondary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ],
               ],
             ),
@@ -456,6 +506,30 @@ class _SettingsScreenState extends State<SettingsScreen>
                         .add(ResyncAllAlarms(locale: s.locale));
                     ScaffoldMessenger.of(context)
                         .showSnackBar(SnackBar(content: Text(s.resyncDone)));
+                  },
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(
+                    Icons.timer_rounded,
+                    color: AppColors.auroraAmber,
+                  ),
+                  title: Text(
+                    s.testAlarm5s,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  trailing: const Icon(Icons.play_arrow_rounded),
+                  onTap: () async {
+                    await AlarmSchedulerService.instance
+                        .scheduleQuickTestAlarm(locale: s.locale);
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(s.testAlarm5sScheduled)),
+                      );
+                    }
                   },
                 ),
                 const Divider(height: 1),

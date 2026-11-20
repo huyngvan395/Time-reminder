@@ -145,7 +145,17 @@ class AppStrings {
   String get backupSection => isVi ? 'Sao lưu & Khôi phục (.json)' : 'Backup & Restore (.json)';
   String get exportJson => isVi ? 'Xuất bản sao lưu JSON' : 'Export JSON Backup';
   String get importJson => isVi ? 'Khôi phục từ tệp JSON' : 'Import from JSON';
-  String get testAlarm => isVi ? 'Thử màn hình báo thức ngay' : 'Preview Full-Screen Alarm';
+  String get testAlarm => isVi ? 'Xem trước màn hình báo thức' : 'Preview Full-Screen Alarm';
+  String get testAlarm5s => isVi ? 'Test báo thức ngay (sau 5 giây)' : 'Test Real Alarm (in 5 seconds)';
+  String get testAlarm5sScheduled => isVi
+      ? 'Đã hẹn báo thức thử sau 5 giây! Hãy thử khóa màn hình hoặc giữ mở app để kiểm tra.'
+      : 'Test alarm scheduled in 5 seconds! Lock your screen or keep the app open to test.';
+  String get scheduledPowerOnTitle => isVi
+      ? 'Mẹo báo thức khi tắt nguồn qua đêm'
+      : 'Tip: Overnight Power-Off Alarms';
+  String get scheduledPowerOnDesc => isVi
+      ? 'Android không cho phép ứng dụng tự bật nguồn phần cứng khi máy tắt hẳn. Hãy bật "Tự động bật nguồn" (Scheduled Power On) trong Cài đặt máy trước giờ báo thức 2 phút — ChronoGlass sẽ tự động bắt lại và reo ngay khi máy vừa khởi động!'
+      : 'Android prevents apps from powering on hardware from a full shutdown. Enable "Scheduled Power On" in system settings 2 minutes before your alarm — ChronoGlass will automatically catch up and ring right after boot!';
   String get rescheduleAll => isVi ? 'Đồng bộ lại tất cả báo thức' : 'Resync All Scheduled Alarms';
   String get resyncDone => isVi ? 'Đã đồng bộ lại toàn bộ báo thức!' : 'All active alarms resynchronized!';
 

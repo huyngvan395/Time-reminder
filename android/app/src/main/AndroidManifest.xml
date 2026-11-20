@@ -71,6 +71,12 @@
             android:exported="false"
             android:name="com.dexterous.flutterlocalnotifications.ActionBroadcastReceiver" />
 
+        <!-- ChronoGlass Native Exact Alarm Trigger Receiver -->
+        <receiver
+            android:name=".AlarmTriggerReceiver"
+            android:enabled="true"
+            android:exported="false" />
+
         <!-- ChronoGlass custom Boot & Timezone Reschedule Receiver -->
         <receiver
             android:name=".BootRescheduleReceiver"
@@ -79,6 +85,8 @@
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
                 <action android:name="android.intent.action.TIME_SET" />
                 <action android:name="android.intent.action.TIMEZONE_CHANGED" />

@@ -27,33 +27,167 @@ class MainShellScreen extends StatefulWidget {
   State<MainShellScreen> createState() => _MainShellScreenState();
 }
 
-class _MainShellScreenState extends State<MainShellScreen> {
+class _MainShellScreenState extends State<MainShellScreen>
+    with WidgetsBindingObserver {
   int _tabIndex = 0;
   StreamSubscription<NotificationInteractionEvent>? _notifSub;
+  Timer? _foregroundWatchdog;
+  bool _isAlarmScreenOpen = false;
+  final Set<String> _triggeredKeys = {};
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+
     _notifSub = AlarmSchedulerService.instance.onInteraction
         .listen(_handleNotificationEvent);
+
+    // Layer 1: Foreground Precision Watchdog (fires on the exact second while app is open)
+    _foregroundWatchdog = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) => _checkDueReminders(),
+    );
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final pending =
           AlarmSchedulerService.instance.consumePendingLaunchEvent();
       if (pending != null) {
         _handleNotificationEvent(pending);
+      } else {
+        _checkDueReminders();
       }
     });
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _notifSub?.cancel();
+    _foregroundWatchdog?.cancel();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _checkDueReminders();
+    }
+  }
+
+  void _checkDueReminders() {
+    if (!mounted || _isAlarmScreenOpen) return;
+    final now = DateTime.now();
+
+    // Check 5-second test alarm first
+    final testAt = AlarmSchedulerService.instance.pendingTestAlarmAt;
+    if (testAt != null && !testAt.isAfter(now)) {
+      AlarmSchedulerService.instance.pendingTestAlarmAt = null;
+      _launchTestAlarm();
+      return;
+    }
+
+    final reminderBloc = context.read<ReminderBloc>();
+    if (reminderBloc.state.isLoading) return;
+
+    // Catch due alarms (including recently missed within 12 hours after power-on)
+    final catchUpLimit = now.subtract(const Duration(hours: 12));
+    for (final r in reminderBloc.state.activeReminders) {
+      if (!r.scheduledAt.isAfter(now) && r.scheduledAt.isAfter(catchUpLimit)) {
+        final key = '${r.id}_${r.scheduledAt.millisecondsSinceEpoch}';
+        if (!_triggeredKeys.contains(key)) {
+          _triggeredKeys.add(key);
+          _openAlarmScreen(r);
+          return;
+        }
+      }
+    }
+  }
+
+  void _launchTestAlarm({String? titleOverride}) {
+    if (!mounted || _isAlarmScreenOpen) return;
+    final settings = context.read<SettingsCubit>().state;
+    final s = AppStrings(settings.locale);
+    final now = DateTime.now();
+
+    final testReminder = Reminder(
+      id: AlarmSchedulerService.testAlarmId,
+      title: titleOverride ??
+          (s.isVi
+              ? 'Báo thức thử nghiệm (5 giây)'
+              : '5-Second Alarm Test'),
+      notes: s.isVi
+          ? 'Đánh thức màn hình khóa, chuông tăng dần và rung liên tục hoạt động thành công!'
+          : 'Lockscreen wake-up, escalating ringtone & continuous vibration verified!',
+      scheduledAt: now,
+      alertMode: AlertMode.strongAlarm,
+      dismissChallenge: DismissChallenge.slide,
+      alarmSoundId: AppConstants.systemDefaultRingtoneToken,
+      createdAt: now,
+      updatedAt: now,
+    );
+
+    _isAlarmScreenOpen = true;
+    Navigator.of(context)
+        .push(
+          MaterialPageRoute<void>(
+            fullscreenDialog: true,
+            builder: (_) => FullScreenAlarmScreen(
+              reminder: testReminder,
+              strings: s,
+              globalDefaultSoundId: settings.defaultAlarmSoundId,
+              onDismissed: () {},
+              onSnoozed: (_) {},
+            ),
+          ),
+        )
+        .whenComplete(() {
+      _isAlarmScreenOpen = false;
+    });
+  }
+
+  void _openAlarmScreen(Reminder target) {
+    if (!mounted || _isAlarmScreenOpen) return;
+    final reminderBloc = context.read<ReminderBloc>();
+    final settings = context.read<SettingsCubit>().state;
+    final s = AppStrings(settings.locale);
+
+    _isAlarmScreenOpen = true;
+    Navigator.of(context)
+        .push(
+          MaterialPageRoute<void>(
+            fullscreenDialog: true,
+            builder: (_) => FullScreenAlarmScreen(
+              reminder: target,
+              strings: s,
+              globalDefaultSoundId: settings.defaultAlarmSoundId,
+              onDismissed: () {
+                reminderBloc.add(CompleteReminder(target, locale: s.locale));
+                context.read<HistoryCubit>().loadHistory();
+              },
+              onSnoozed: (mins) {
+                reminderBloc.add(
+                  SnoozeReminder(target, minutes: mins, locale: s.locale),
+                );
+                context.read<HistoryCubit>().loadHistory();
+              },
+            ),
+          ),
+        )
+        .whenComplete(() {
+      _isAlarmScreenOpen = false;
+    });
   }
 
   void _handleNotificationEvent(NotificationInteractionEvent event) {
     if (!mounted) return;
+
+    if (event.reminderId == AlarmSchedulerService.testAlarmId) {
+      AlarmSchedulerService.instance.pendingTestAlarmAt = null;
+      _launchTestAlarm(titleOverride: event.titleOverride);
+      return;
+    }
+
     final reminderBloc = context.read<ReminderBloc>();
     final settings = context.read<SettingsCubit>().state;
     final s = AppStrings(settings.locale);
@@ -65,7 +199,16 @@ class _MainShellScreenState extends State<MainShellScreen> {
         break;
       }
     }
-    if (target == null) return;
+
+    // If reminders haven't finished loading on cold boot yet, retry shortly
+    if (target == null) {
+      if (reminderBloc.state.isLoading) {
+        Future.delayed(const Duration(milliseconds: 500), () {
+          if (mounted) _handleNotificationEvent(event);
+        });
+      }
+      return;
+    }
 
     if (event.actionId == AppConstants.actionComplete) {
       reminderBloc.add(CompleteReminder(target, locale: s.locale));
@@ -85,25 +228,9 @@ class _MainShellScreenState extends State<MainShellScreen> {
       return;
     }
 
-    final r = target;
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        fullscreenDialog: true,
-        builder: (_) => FullScreenAlarmScreen(
-          reminder: r,
-          strings: s,
-          globalDefaultSoundId: settings.defaultAlarmSoundId,
-          onDismissed: () {
-            reminderBloc.add(CompleteReminder(r, locale: s.locale));
-            context.read<HistoryCubit>().loadHistory();
-          },
-          onSnoozed: (mins) {
-            reminderBloc.add(SnoozeReminder(r, minutes: mins, locale: s.locale));
-            context.read<HistoryCubit>().loadHistory();
-          },
-        ),
-      ),
-    );
+    final key = '${target.id}_${target.scheduledAt.millisecondsSinceEpoch}';
+    _triggeredKeys.add(key);
+    _openAlarmScreen(target);
   }
 
   @override
