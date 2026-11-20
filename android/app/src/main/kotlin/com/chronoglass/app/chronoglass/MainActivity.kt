@@ -3,6 +3,7 @@ package com.chronoglass.app.chronoglass
 import android.app.AlarmManager
 import android.app.KeyguardManager
 import android.app.NotificationManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -27,6 +28,20 @@ class MainActivity : FlutterActivity() {
         extractAlarmIntent(intent, dispatchNow = false)
     }
 
+    override fun onResume() {
+        super.onResume()
+        isForeground = true
+        // Hide the floating pill when user enters ChronoGlass directly
+        if (AlarmRingerController.isRinging) {
+            AlarmOverlayManager.dismiss(this)
+        }
+    }
+
+    override fun onPause() {
+        isForeground = false
+        super.onPause()
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
@@ -37,7 +52,7 @@ class MainActivity : FlutterActivity() {
     private fun extractAlarmIntent(intent: Intent?, dispatchNow: Boolean) {
         val payload = NativeAlarmScheduler.payloadFromIntent(intent) ?: return
         val isAlarm = intent?.getBooleanExtra(AlarmReceiver.EXTRA_IS_ALARM_LAUNCH, false) == true
-        if (isAlarm || AlarmForegroundService.isRinging) {
+        if (isAlarm || AlarmRingerController.isRinging) {
             pendingPayload = payload
             if (dispatchNow) {
                 deliverAlarmToFlutter(payload)
@@ -97,16 +112,6 @@ class MainActivity : FlutterActivity() {
                     "isNativeRinging" -> {
                         result.success(AlarmRingerController.isRinging)
                     }
-                    "syncPowerOffAlarm" -> {
-                        val triggerAtMillis = call.argument<Number>("triggerAtMillis")?.toLong() ?: 0L
-                        val title = call.argument<String>("title") ?: "ChronoGlass"
-                        val ok = if (triggerAtMillis > 0L) {
-                            NativeAlarmScheduler.syncToSystemClockPowerOff(this, triggerAtMillis, title)
-                        } else {
-                            false
-                        }
-                        result.success(ok)
-                    }
                     "getPendingAlarm" -> {
                         val active = pendingPayload ?: AlarmStorageHelper.getRingingAlarm(this)
                         pendingPayload = null
@@ -118,6 +123,17 @@ class MainActivity : FlutterActivity() {
                     }
                     "openAppSettings" -> {
                         openApplicationDetailsSettings()
+                        result.success(true)
+                    }
+                    "openAutoStartSettings" -> {
+                        openOemAutoStartSettings()
+                        result.success(true)
+                    }
+                    "canDrawOverlays" -> {
+                        result.success(AlarmOverlayManager.canDrawOverlays(this))
+                    }
+                    "openOverlaySettings" -> {
+                        openOverlayPermissionSettings()
                         result.success(true)
                     }
                     else -> result.notImplemented()
@@ -142,6 +158,17 @@ class MainActivity : FlutterActivity() {
                     }
                     "openAppSettings" -> {
                         openApplicationDetailsSettings()
+                        result.success(true)
+                    }
+                    "openAutoStartSettings" -> {
+                        openOemAutoStartSettings()
+                        result.success(true)
+                    }
+                    "canDrawOverlays" -> {
+                        result.success(AlarmOverlayManager.canDrawOverlays(this))
+                    }
+                    "openOverlaySettings" -> {
+                        openOverlayPermissionSettings()
                         result.success(true)
                     }
                     "canScheduleExactAlarms" -> {
@@ -216,6 +243,82 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    private fun openOverlayPermissionSettings() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            try {
+                val intent = Intent(
+                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:$packageName")
+                ).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                startActivity(intent)
+                return
+            } catch (_: Exception) {
+            }
+        }
+        openApplicationDetailsSettings()
+    }
+
+    private fun openOemAutoStartSettings() {
+        val candidates = listOf(
+            // Xiaomi MIUI / HyperOS Autostart
+            Intent().setComponent(
+                ComponentName(
+                    "com.miui.securitycenter",
+                    "com.miui.permcenter.autostart.AutoStartManagementActivity"
+                )
+            ),
+            // Xiaomi MIUI / HyperOS Other Permissions (Display pop-up windows in background / Lockscreen)
+            Intent("miui.intent.action.APP_PERM_EDITOR").apply {
+                setClassName(
+                    "com.miui.securitycenter",
+                    "com.miui.permcenter.permissions.PermissionsEditorActivity"
+                )
+                putExtra("extra_pkgname", packageName)
+            },
+            // OPPO / Realme ColorOS
+            Intent().setComponent(
+                ComponentName(
+                    "com.coloros.safecenter",
+                    "com.coloros.safecenter.permission.startup.StartupAppListActivity"
+                )
+            ),
+            Intent().setComponent(
+                ComponentName(
+                    "com.oplus.safecenter",
+                    "com.oplus.safecenter.permission.startup.StartupAppListActivity"
+                )
+            ),
+            // Vivo
+            Intent().setComponent(
+                ComponentName(
+                    "com.iqoo.secure",
+                    "com.iqoo.secure.ui.phoneoptimize.AddWhiteListActivity"
+                )
+            ),
+            // Huawei / Honor
+            Intent().setComponent(
+                ComponentName(
+                    "com.huawei.systemmanager",
+                    "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity"
+                )
+            )
+        )
+
+        for (candidate in candidates) {
+            try {
+                candidate.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                if (packageManager.resolveActivity(candidate, 0) != null) {
+                    startActivity(candidate)
+                    return
+                }
+            } catch (_: Exception) {
+            }
+        }
+        openApplicationDetailsSettings()
+    }
+
     private fun openApplicationDetailsSettings() {
         try {
             val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
@@ -256,12 +359,9 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
-        if (nativeAlarmChannel != null) {
-            nativeAlarmChannel = null
-        }
-        if (systemChannel != null) {
-            systemChannel = null
-        }
+        isForeground = false
+        nativeAlarmChannel = null
+        systemChannel = null
         super.onDestroy()
     }
 
@@ -270,6 +370,9 @@ class MainActivity : FlutterActivity() {
         private var nativeAlarmChannel: MethodChannel? = null
         private var systemChannel: MethodChannel? = null
         private var pendingPayload: NativeAlarmPayload? = null
+
+        @Volatile
+        var isForeground: Boolean = false
 
         fun deliverAlarmToFlutter(payload: NativeAlarmPayload) {
             pendingPayload = payload

@@ -30,7 +30,6 @@ class NotificationInteractionEvent {
   });
 }
 
-/// Top-level handler for notification action buttons tapped in the background.
 @pragma('vm:entry-point')
 void chronoGlassNotificationBgResponse(NotificationResponse response) {
   debugPrint(
@@ -63,7 +62,7 @@ class AlarmSchedulerService {
   }
 
   /// In-memory scheduled timestamp for the 5-second test alarm
-  /// so the foreground watchdog fires it on the exact second if app is open.
+  /// so the foreground watchdog fires it cleanly when inside the app.
   DateTime? pendingTestAlarmAt;
 
   bool _initialized = false;
@@ -116,7 +115,7 @@ class AlarmSchedulerService {
         }
       });
 
-      // Cold-start check: did native AlarmRingerController / AlarmForegroundService launch MainActivity?
+      // Cold-start check: did native AlarmRingerController launch MainActivity?
       try {
         final pending = await _nativeAlarmChannel
             .invokeMethod<Map<dynamic, dynamic>>('getPendingAlarm');
@@ -173,20 +172,6 @@ class AlarmSchedulerService {
     if (androidPlugin == null) return;
 
     await androidPlugin.createNotificationChannel(
-      AndroidNotificationChannel(
-        AppConstants.strongAlarmChannelId,
-        AppConstants.strongAlarmChannelName,
-        description: AppConstants.strongAlarmChannelDesc,
-        importance: Importance.max,
-        playSound: true,
-        sound: const RawResourceAndroidNotificationSound('aurora_chime'),
-        audioAttributesUsage: AudioAttributesUsage.alarm,
-        enableVibration: true,
-        vibrationPattern: Int64List.fromList([0, 600, 400, 800, 400]),
-      ),
-    );
-
-    await androidPlugin.createNotificationChannel(
       const AndroidNotificationChannel(
         AppConstants.preReminderChannelId,
         AppConstants.preReminderChannelName,
@@ -220,7 +205,6 @@ class AlarmSchedulerService {
     }
   }
 
-  /// Queries whether native AlarmRingerController / AlarmForegroundService is currently playing alarm audio.
   Future<bool> isNativeRinging() async {
     if (!Platform.isAndroid) return false;
     try {
@@ -231,7 +215,6 @@ class AlarmSchedulerService {
     }
   }
 
-  /// Immediately stops the native AlarmRingerController & AlarmForegroundService.
   Future<void> stopNativeRinging() async {
     if (!Platform.isAndroid) return;
     try {
@@ -241,7 +224,6 @@ class AlarmSchedulerService {
     }
   }
 
-  /// Opens Android Application Details Settings for Auto-Startup / Background / Lockscreen permissions.
   Future<void> openNativeAppSettings() async {
     if (!Platform.isAndroid) return;
     try {
@@ -249,23 +231,11 @@ class AlarmSchedulerService {
     } catch (_) {}
   }
 
-  /// Silently syncs an alarm time into the device's built-in System Clock (`AlarmClock.ACTION_SET_ALARM`)
-  /// so hardware power-off wake-up works 100% on OEM devices even when completely shut down.
-  Future<bool> syncToSystemClockPowerOff({
-    required DateTime scheduledAt,
-    required String title,
-  }) async {
-    if (!Platform.isAndroid) return false;
+  Future<void> openOemAutoStartSettings() async {
+    if (!Platform.isAndroid) return;
     try {
-      return await _nativeAlarmChannel.invokeMethod<bool>('syncPowerOffAlarm', {
-            'triggerAtMillis': scheduledAt.millisecondsSinceEpoch,
-            'title': title,
-          }) ??
-          false;
-    } catch (e) {
-      debugPrint('syncToSystemClockPowerOff warning: $e');
-      return false;
-    }
+      await _nativeAlarmChannel.invokeMethod('openAutoStartSettings');
+    } catch (_) {}
   }
 
   /// Schedules a real 5-second test alarm through the 100% Native Android Alarm Engine.
@@ -280,8 +250,8 @@ class AlarmSchedulerService {
       id: testAlarmId,
       title: testTitle,
       notes: locale == 'vi'
-          ? 'Đánh thức màn hình khóa, hiển thị popup và reo chuông thành công!'
-          : 'Lockscreen wake-up, heads-up popup & alarm ringtone verified!',
+          ? 'Kiểm tra popup nổi trên màn hình chính, chuông báo thức và rung.'
+          : 'Verifying floating alarm pill popup, ringtone & vibration.',
       scheduledAt: triggerAt,
       alertMode: AlertMode.strongAlarm,
       alarmSoundId: AppConstants.systemDefaultRingtoneToken,
@@ -293,20 +263,18 @@ class AlarmSchedulerService {
     return triggerAt;
   }
 
-  /// Schedules a reminder via:
-  /// 1. 100% Native Android Alarm Engine (`AlarmManager.setAlarmClock` + Hardware Power-Off RTC + `AlarmReceiver` + `AlarmRingerController` + `AlarmForegroundService`)
-  /// 2. Parallel `flutter_local_notifications` Full-Screen Intent Heads-Up Popup backup
-  /// 3. Pre-Reminders (`Nhắc trước`)
+  /// Schedules an exact calendar-date & time alarm via the 100% Native Android Alarm Engine
+  /// (`AlarmManager.setAlarmClock` + Exact-Epoch RTC + `AlarmReceiver` -> `AlarmRingerController` +
+  /// Floating Pill Overlay + Custom Heads-Up Notification + `AlarmForegroundService`).
   Future<void> scheduleReminder(
     Reminder reminder, {
     String locale = 'vi',
-    String globalDefaultSoundId = AppConstants.defaultRingtoneId,
+    String? globalDefaultSoundId,
   }) async {
     await cancelReminder(reminder);
     if (!reminder.isActive || reminder.isCompleted) return;
 
     final now = DateTime.now();
-    // If the user selected the current minute (e.g. up to 65s ago), fire 2 seconds from now instead of dropping!
     DateTime effectiveTrigger = reminder.scheduledAt;
     if (!effectiveTrigger.isAfter(now)) {
       if (effectiveTrigger.isAfter(now.subtract(const Duration(seconds: 65)))) {
@@ -327,12 +295,12 @@ class AlarmSchedulerService {
 
     final body = reminder.notes.isEmpty
         ? (locale == 'vi'
-            ? '⏰ Đến giờ nhắc nhở • Chạm để mở'
-            : '⏰ Alarm ringing • Tap to open')
+            ? 'Đến giờ nhắc nhở • Chạm để mở'
+            : 'Alarm ringing • Tap to open')
         : reminder.notes;
 
-    // 1. Primary Native Android Alarm Engine (setAlarmClock + Hardware RTC Power-Off + AlarmRingerController)
     if (Platform.isAndroid) {
+      // Single clean Native Android Alarm Engine — zero race conditions with flutter_local_notifications
       try {
         await _nativeAlarmChannel.invokeMethod('scheduleAlarm', {
           'id': reminder.id,
@@ -347,91 +315,49 @@ class AlarmSchedulerService {
       } catch (e) {
         debugPrint('Native scheduleAlarm warning: $e');
       }
-    }
-
-    // 2. Parallel Heads-Up Popup + Full-Screen Intent Notification via flutter_local_notifications
-    final tzScheduled = tz.TZDateTime.from(effectiveTrigger, tz.local);
-    final payload = jsonEncode({
-      'reminderId': reminder.id,
-      'isStrongAlarm': true,
-      'alarmSoundId': reminder.alarmSoundId,
-    });
-    final completeLabel = locale == 'vi' ? 'Tắt báo thức' : 'Dismiss';
-    final snoozeLabel = locale == 'vi'
-        ? 'Báo lại ${reminder.snoozeIntervalMinutes}p'
-        : 'Snooze ${reminder.snoozeIntervalMinutes}m';
-
-    final details = NotificationDetails(
-      android: AndroidNotificationDetails(
-        AppConstants.strongAlarmChannelId,
-        AppConstants.strongAlarmChannelName,
-        channelDescription: AppConstants.strongAlarmChannelDesc,
-        importance: Importance.max,
-        priority: Priority.max,
-        category: AndroidNotificationCategory.alarm,
-        visibility: NotificationVisibility.public,
-        fullScreenIntent: true,
-        ongoing: true,
-        autoCancel: false,
-        playSound: true,
-        sound: const RawResourceAndroidNotificationSound('aurora_chime'),
-        audioAttributesUsage: AudioAttributesUsage.alarm,
-        vibrationPattern: Int64List.fromList([0, 600, 400, 800, 400]),
-        actions: [
-          AndroidNotificationAction(
-            AppConstants.actionSnooze10,
-            snoozeLabel,
-            showsUserInterface: true,
-          ),
-          AndroidNotificationAction(
-            AppConstants.actionComplete,
-            completeLabel,
-            showsUserInterface: true,
-          ),
-        ],
-      ),
-      iOS: const DarwinNotificationDetails(
-        presentAlert: true,
-        presentBadge: true,
-        presentSound: true,
-        interruptionLevel: InterruptionLevel.timeSensitive,
-      ),
-    );
-
-    try {
-      await _notifications.zonedSchedule(
-        reminder.notificationId,
-        '⏰ ${reminder.title}',
-        body,
-        tzScheduled,
-        details,
-        androidScheduleMode: AndroidScheduleMode.alarmClock,
-        uiLocalNotificationDateInterpretation:
-            UILocalNotificationDateInterpretation.absoluteTime,
-        payload: payload,
-      );
-    } catch (e) {
+    } else {
+      // iOS scheduling via flutter_local_notifications
+      final tzScheduled = tz.TZDateTime.from(effectiveTrigger, tz.local);
+      final payload = jsonEncode({
+        'reminderId': reminder.id,
+        'isStrongAlarm': true,
+        'alarmSoundId': reminder.alarmSoundId,
+      });
       try {
         await _notifications.zonedSchedule(
           reminder.notificationId,
-          '⏰ ${reminder.title}',
+          reminder.title,
           body,
           tzScheduled,
-          details,
-          androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+          const NotificationDetails(
+            iOS: DarwinNotificationDetails(
+              presentAlert: true,
+              presentBadge: true,
+              presentSound: true,
+              interruptionLevel: InterruptionLevel.timeSensitive,
+            ),
+          ),
+          androidScheduleMode: AndroidScheduleMode.alarmClock,
           uiLocalNotificationDateInterpretation:
               UILocalNotificationDateInterpretation.absoluteTime,
           payload: payload,
         );
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('iOS zonedSchedule warning: $e');
+      }
     }
 
-    // 3. Schedule Pre-Reminders (Nhắc trước)
+    // Schedule Pre-Reminders (Nhắc trước)
     final preDates = RecurrenceCalculator.computePreReminderTimestamps(
       effectiveTrigger,
       reminder.preReminderMinutes,
       now: now,
     );
+    final payload = jsonEncode({
+      'reminderId': reminder.id,
+      'isStrongAlarm': true,
+      'alarmSoundId': reminder.alarmSoundId,
+    });
     for (int i = 0; i < preDates.length; i++) {
       final preDt = preDates[i];
       final mins = reminder.preReminderMinutes[i];

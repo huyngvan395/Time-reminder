@@ -251,6 +251,15 @@ class _SettingsScreenState extends State<SettingsScreen>
                     },
                   ),
                   _PermRow(
+                    title: s.permOverlay,
+                    granted: _status!.overlayGranted,
+                    strings: s,
+                    onFix: () async {
+                      await PermissionGuardService.instance
+                          .openOverlaySettings();
+                    },
+                  ),
+                  _PermRow(
                     title: s.permFullScreen,
                     granted: _status!.fullScreenIntentGranted,
                     strings: s,
@@ -298,6 +307,37 @@ class _SettingsScreenState extends State<SettingsScreen>
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton.tonal(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: AppColors.auroraCyan
+                                  .withValues(alpha: 0.22),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 12,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            onPressed: () => AlarmSchedulerService.instance
+                                .openOemAutoStartSettings(),
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                s.openAutoStartBtn,
+                                maxLines: 1,
+                                softWrap: false,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 13.5,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
                         SizedBox(
                           width: double.infinity,
                           child: FilledButton.tonal(

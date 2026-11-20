@@ -118,12 +118,21 @@ class RingtoneService {
   /// verifying custom file existence and gracefully falling back to `morning_marimba`.
   RingtoneItem resolveRingtone(
     String? reminderSoundId, {
-    String globalDefaultId = AppConstants.defaultRingtoneId,
+    String? globalDefaultId,
   }) {
+    String resolvedGlobal = globalDefaultId ?? AppConstants.defaultRingtoneId;
+    if (globalDefaultId == null && Hive.isBoxOpen(AppConstants.settingsBoxName)) {
+      resolvedGlobal = Hive.box<dynamic>(AppConstants.settingsBoxName).get(
+            'defaultAlarmSoundId',
+            defaultValue: AppConstants.defaultRingtoneId,
+          ) as String? ??
+          AppConstants.defaultRingtoneId;
+    }
+
     final effectiveId = (reminderSoundId == null ||
             reminderSoundId.isEmpty ||
             reminderSoundId == AppConstants.systemDefaultRingtoneToken)
-        ? globalDefaultId
+        ? resolvedGlobal
         : reminderSoundId;
 
     // Map legacy sound IDs gracefully

@@ -63,12 +63,6 @@ class AppStrings {
   String get categoryLabel => isVi ? 'Danh mục & Thẻ màu' : 'Category & Tag';
   String get addCustomTag => isVi ? '+ Thẻ mới' : '+ New Tag';
   String get importantFlag => isVi ? 'Đánh dấu quan trọng' : 'Mark as Important';
-  String get powerOffAlarmSyncLabel => isVi
-      ? 'Báo thức cả khi tắt nguồn (Đồng bộ RTC Đồng hồ máy)'
-      : 'Ring even when powered off (Sync System Clock RTC)';
-  String get powerOffAlarmSyncDesc => isVi
-      ? 'Tự động ghi giờ báo thức vào chip RTC Đồng hồ hệ thống để máy tự bật nguồn và reo chuông.'
-      : 'Syncs alarm time with the hardware System Clock RTC to wake the device from power-off.';
   String get snoozeConfig => isVi ? 'Cấu hình báo lại (Snooze)' : 'Snooze Configuration';
   String get maxSnooze => isVi ? 'Số lần báo lại tối đa' : 'Max snooze count';
   String get dismissChallengeLabel => isVi ? 'Thử thách tắt báo thức' : 'Dismiss Challenge';
@@ -137,8 +131,14 @@ class AppStrings {
       : 'Ensure alarms fire reliably on lock screen, Doze mode, and after reboot.';
   String get permNotifications => isVi ? 'Quyền thông báo' : 'Notification Permission';
   String get permExactAlarm => isVi ? 'Quyền báo thức chính xác' : 'Exact Alarm Permission';
+  String get permOverlay => isVi
+      ? 'Popup nổi trên ứng dụng khác (Overlay)'
+      : 'Floating Popup Over Other Apps';
   String get permFullScreen => isVi ? 'Hiển thị toàn màn hình / Khóa màn hình' : 'Full-Screen Intent / Lock Screen';
   String get permBattery => isVi ? 'Bỏ qua tối ưu hóa pin (OEM Guard)' : 'Battery Optimization Exemption';
+  String get openAutoStartBtn => isVi
+      ? '🚀 Bật Tự khởi chạy (Xiaomi / OPPO / Vivo)'
+      : '🚀 Enable Auto-Start (Xiaomi / OPPO / Vivo)';
   String get statusReady => isVi ? 'Sẵn sàng' : 'Ready';
   String get statusActionNeeded => isVi ? 'Cần cấp quyền' : 'Fix now';
   String get oemGuardHint => isVi

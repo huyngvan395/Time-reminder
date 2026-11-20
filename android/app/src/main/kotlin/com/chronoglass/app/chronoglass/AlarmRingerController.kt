@@ -1,5 +1,6 @@
 package com.chronoglass.app.chronoglass
 
+import android.app.KeyguardManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -19,22 +20,27 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import android.util.Log
+import android.widget.RemoteViews
 import androidx.core.app.NotificationCompat
 import com.chronoglass.app.chronoglass.NativeAlarmScheduler.putExtrasFromPayload
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * In-process singleton that IMMEDIATELY executes when AlarmReceiver fires:
  * 1. Acquires CPU & Screen WakeLocks so the device wakes from Deep Doze / Lockscreen
- * 2. Posts a Heads-Up Popup Banner + FullScreenIntent Notification (PRIORITY_MAX, CATEGORY_ALARM)
- *    even if Android 12-15 or ColorOS restricts background ForegroundService startup
- * 3. Plays looping USAGE_ALARM ringtone via MediaPlayer with volume boost & ramp
- * 4. Starts continuous USAGE_ALARM vibration
- * 5. Launches MainActivity over the lockscreen
+ * 2. Posts a Custom Pill Heads-Up Popup + FullScreenIntent Notification (PRIORITY_MAX, CATEGORY_ALARM)
+ * 3. Plays looping USAGE_ALARM ringtone via MediaPlayer (with volume ramp & silent-mode bypass) + Vibrator
+ * 4. Smart UX Routing:
+ *    - Screen OFF or LOCKED -> Wakes screen & launches FullScreenAlarmScreen over the lockscreen
+ *    - Screen ON & UNLOCKED (user on Home Screen or in another app) -> Displays the sleek floating dark
+ *      pill popup banner (AlarmOverlayManager + custom RemoteViews heads-up notification) with Snooze & Stop!
  */
 object AlarmRingerController {
     private const val TAG = "ChronoGlassRinger"
-    const val CHANNEL_ID = "chronoglass_alarm_popup_v3"
+    const val CHANNEL_ID = "chronoglass_alarm_pill_v4"
     const val NOTIFICATION_ID = 994411
 
     @Volatile
@@ -46,7 +52,7 @@ object AlarmRingerController {
     private var cpuWakeLock: PowerManager.WakeLock? = null
     private var screenWakeLock: PowerManager.WakeLock? = null
     private val mainHandler = Handler(Looper.getMainLooper())
-    private var currentVolume = 0.35f
+    private var currentVolume = 0.40f
 
     private val volumeRampRunnable = object : Runnable {
         override fun run() {
@@ -57,14 +63,9 @@ object AlarmRingerController {
             } catch (_: Exception) {
             }
             if (currentVolume < 1.0f) {
-                mainHandler.postDelayed(this, 750L)
+                mainHandler.postDelayed(this, 700L)
             }
         }
-    }
-
-    private val autoStopRunnable = Runnable {
-        // Safety auto-stop after 10 minutes of continuous ringing
-        Log.i(TAG, "Auto-stopping alarm after 10 minutes timeout")
     }
 
     @Synchronized
@@ -72,11 +73,15 @@ object AlarmRingerController {
         val appCtx = context.applicationContext
         Log.i(TAG, "startRinging id=${payload.id}, title=${payload.title}")
 
+        val pm = appCtx.getSystemService(Context.POWER_SERVICE) as PowerManager
+        val km = appCtx.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
+        val isScreenOffOrLocked = !pm.isInteractive || km.isKeyguardLocked
+
         acquireWakeLocks(appCtx)
         AlarmStorageHelper.saveRingingAlarm(appCtx, payload)
         AlarmStorageHelper.removeAlarm(appCtx, payload.id)
 
-        // Cancel any duplicate scheduled flutter_local_notifications entry for this ID
+        // Cancel any stray notification for this ID
         try {
             val nm = appCtx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             nm.cancel(NativeAlarmScheduler.requestCodeFor(payload.id))
@@ -86,7 +91,7 @@ object AlarmRingerController {
         ensureNotificationChannel(appCtx)
         val notification = buildPopupAlarmNotification(appCtx, payload)
 
-        // Immediately post Heads-Up Popup + FullScreenIntent notification from BroadcastReceiver context!
+        // Always post Heads-Up Popup + FullScreenIntent Notification
         try {
             val nm = appCtx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             nm.notify(NOTIFICATION_ID, notification)
@@ -100,8 +105,20 @@ object AlarmRingerController {
             startNativeVibration(appCtx)
         }
 
-        launchFullScreenActivity(appCtx, payload)
-        MainActivity.deliverAlarmToFlutter(payload)
+        if (isScreenOffOrLocked) {
+            // Screen is OFF or LOCKED: launch FullScreenAlarmScreen right over the lockscreen!
+            launchFullScreenActivity(appCtx, payload)
+            MainActivity.deliverAlarmToFlutter(payload)
+        } else if (MainActivity.isForeground) {
+            // User is currently inside ChronoGlass: show FullScreenAlarmScreen directly!
+            MainActivity.deliverAlarmToFlutter(payload)
+        } else {
+            // User is on Home Screen or using another app:
+            // Show the sleek floating dark pill popup banner at the top of the screen (with Snooze & Stop)!
+            if (AlarmOverlayManager.canDrawOverlays(appCtx)) {
+                AlarmOverlayManager.show(appCtx, payload)
+            }
+        }
 
         return notification
     }
@@ -111,21 +128,15 @@ object AlarmRingerController {
             val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             if (nm.getNotificationChannel(CHANNEL_ID) != null) return
 
-            val soundUri = Uri.parse("android.resource://${context.packageName}/raw/aurora_chime")
-            val attrs = AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_ALARM)
-                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                .build()
-
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "Báo thức & Nhắc nhở ChronoGlass (Popup)",
+                "Báo thức nổi ChronoGlass",
                 NotificationManager.IMPORTANCE_HIGH
             ).apply {
-                description = "Thông báo popup nổi và báo thức toàn màn hình khóa"
-                // Attach fallback alarm sound on channel in case OEM kills background process,
-                // while MediaPlayer plays the selected custom/built-in melody
-                setSound(soundUri, attrs)
+                description = "Hiển thị popup báo thức nổi và đánh thức màn hình khóa"
+                // Sound handled by MediaPlayer (USAGE_ALARM) so it plays the exact selected ringtone
+                // without conflicting with channel sound
+                setSound(null, null)
                 enableVibration(true)
                 vibrationPattern = longArrayOf(0, 600, 400, 800, 500)
                 enableLights(true)
@@ -178,25 +189,34 @@ object AlarmRingerController {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val bodyText = if (payload.body.isNotBlank()) payload.body else "⏰ Đến giờ nhắc nhở • Chạm để mở"
-        val snoozeMins = if (payload.snoozeMinutes > 0) payload.snoozeMinutes else 5
-        val snoozeLabel = "Báo lại ${snoozeMins}p"
+        val timeStr = SimpleDateFormat("HH:mm", Locale.getDefault())
+            .format(Date(System.currentTimeMillis()))
+
+        // Custom dark pill RemoteViews matching the sleek floating alarm banner style
+        val customPillViews = RemoteViews(context.packageName, R.layout.overlay_alarm_pill).apply {
+            setTextViewText(R.id.alarm_pill_time, timeStr)
+            setTextViewText(R.id.alarm_pill_subtitle, "ChronoGlass: ${payload.title}")
+            setOnClickPendingIntent(R.id.alarm_pill_root, fullScreenPendingIntent)
+            setOnClickPendingIntent(R.id.alarm_pill_snooze, snoozePending)
+            setOnClickPendingIntent(R.id.alarm_pill_stop, dismissPending)
+        }
+
+        val bodyText = if (payload.body.isNotBlank()) payload.body else "ChronoGlass: ${payload.title}"
 
         return NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle("⏰ ${payload.title}")
+            .setContentTitle("$timeStr • ${payload.title}")
             .setContentText(bodyText)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(bodyText))
+            .setCustomContentView(customPillViews)
+            .setCustomHeadsUpContentView(customPillViews)
+            .setCustomBigContentView(customPillViews)
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .setDefaults(NotificationCompat.DEFAULT_LIGHTS or NotificationCompat.DEFAULT_VIBRATE)
             .setOngoing(true)
             .setAutoCancel(false)
             .setContentIntent(fullScreenPendingIntent)
             .setFullScreenIntent(fullScreenPendingIntent, true)
-            .addAction(0, snoozeLabel, snoozePending)
-            .addAction(0, "Tắt báo thức", dismissPending)
             .build()
     }
 
@@ -232,7 +252,7 @@ object AlarmRingerController {
     private fun startNativeAudio(context: Context, payload: NativeAlarmPayload) {
         stopNativeAudio()
 
-        // Ensure hardware STREAM_ALARM volume is audible (at least 60% of max if muted)
+        // Ensure STREAM_ALARM volume is audible even if alarm volume was turned to 0
         try {
             val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
             val maxVol = am.getStreamMaxVolume(AudioManager.STREAM_ALARM)
@@ -311,12 +331,12 @@ object AlarmRingerController {
         if (configured) {
             try {
                 player.isLooping = true
-                currentVolume = 0.35f
+                currentVolume = 0.40f
                 player.setVolume(currentVolume, currentVolume)
                 player.prepare()
                 player.start()
                 mediaPlayer = player
-                mainHandler.postDelayed(volumeRampRunnable, 750L)
+                mainHandler.postDelayed(volumeRampRunnable, 700L)
                 Log.i(TAG, "MediaPlayer started looping USAGE_ALARM audio")
             } catch (e: Exception) {
                 Log.e(TAG, "MediaPlayer start failed: ${e.message}")
@@ -326,7 +346,6 @@ object AlarmRingerController {
 
     private fun stopNativeAudio() {
         mainHandler.removeCallbacks(volumeRampRunnable)
-        mainHandler.removeCallbacks(autoStopRunnable)
         try {
             mediaPlayer?.stop()
         } catch (_: Exception) {
@@ -397,6 +416,7 @@ object AlarmRingerController {
         isRinging = false
         stopNativeAudio()
         stopNativeVibration()
+        AlarmOverlayManager.dismiss(appCtx)
         AlarmStorageHelper.clearRingingAlarm(appCtx)
 
         try {

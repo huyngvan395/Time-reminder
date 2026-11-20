@@ -6,6 +6,7 @@ import 'package:permission_handler/permission_handler.dart';
 class SystemReliabilityStatus {
   final bool notificationsGranted;
   final bool exactAlarmGranted;
+  final bool overlayGranted;
   final bool fullScreenIntentGranted;
   final bool batteryOptimizationIgnored;
   final String deviceManufacturer;
@@ -15,6 +16,7 @@ class SystemReliabilityStatus {
   const SystemReliabilityStatus({
     required this.notificationsGranted,
     required this.exactAlarmGranted,
+    required this.overlayGranted,
     required this.fullScreenIntentGranted,
     required this.batteryOptimizationIgnored,
     required this.deviceManufacturer,
@@ -25,12 +27,14 @@ class SystemReliabilityStatus {
   bool get allReady =>
       notificationsGranted &&
       exactAlarmGranted &&
+      overlayGranted &&
       fullScreenIntentGranted &&
       batteryOptimizationIgnored;
 
   int get readyCount => [
         notificationsGranted,
         exactAlarmGranted,
+        overlayGranted,
         fullScreenIntentGranted,
         batteryOptimizationIgnored,
       ].where((e) => e).length;
@@ -62,6 +66,7 @@ class PermissionGuardService {
       return SystemReliabilityStatus(
         notificationsGranted: notif,
         exactAlarmGranted: true,
+        overlayGranted: true,
         fullScreenIntentGranted: true,
         batteryOptimizationIgnored: true,
         deviceManufacturer: 'Apple',
@@ -75,6 +80,7 @@ class PermissionGuardService {
 
     final notifGranted = await Permission.notification.isGranted;
     bool exactGranted = true;
+    bool overlayGranted = true;
     bool fullScreenGranted = true;
     bool batteryIgnored = true;
 
@@ -84,6 +90,13 @@ class PermissionGuardService {
               true;
     } catch (_) {
       exactGranted = await Permission.scheduleExactAlarm.isGranted;
+    }
+
+    try {
+      overlayGranted =
+          await _systemChannel.invokeMethod<bool>('canDrawOverlays') ?? false;
+    } catch (_) {
+      overlayGranted = await Permission.systemAlertWindow.isGranted;
     }
 
     try {
@@ -105,6 +118,7 @@ class PermissionGuardService {
     return SystemReliabilityStatus(
       notificationsGranted: notifGranted,
       exactAlarmGranted: exactGranted,
+      overlayGranted: overlayGranted,
       fullScreenIntentGranted: fullScreenGranted,
       batteryOptimizationIgnored: batteryIgnored,
       deviceManufacturer: androidInfo.manufacturer,
@@ -129,6 +143,15 @@ class PermissionGuardService {
     }
   }
 
+  Future<void> openOverlaySettings() async {
+    if (!Platform.isAndroid) return;
+    try {
+      await _systemChannel.invokeMethod('openOverlaySettings');
+    } catch (_) {
+      await Permission.systemAlertWindow.request();
+    }
+  }
+
   Future<void> openFullScreenIntentSettings() async {
     if (!Platform.isAndroid) return;
     try {
@@ -144,6 +167,15 @@ class PermissionGuardService {
       await _systemChannel.invokeMethod('openBatteryOptimizationSettings');
     } catch (_) {
       await Permission.ignoreBatteryOptimizations.request();
+    }
+  }
+
+  Future<void> openAutoStartSettings() async {
+    if (!Platform.isAndroid) return;
+    try {
+      await _systemChannel.invokeMethod('openAutoStartSettings');
+    } catch (_) {
+      await openAppSettings();
     }
   }
 }

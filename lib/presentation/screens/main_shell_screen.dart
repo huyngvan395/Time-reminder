@@ -84,6 +84,9 @@ class _MainShellScreenState extends State<MainShellScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      // Reload from SQLite in case the user dismissed/snoozed an alarm on the native floating pill
+      context.read<ReminderBloc>().add(const LoadReminders());
+      context.read<HistoryCubit>().loadHistory();
       _checkDueReminders();
     }
   }

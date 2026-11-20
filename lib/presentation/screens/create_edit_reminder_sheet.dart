@@ -11,7 +11,6 @@ import '../../domain/entities/checklist_item.dart';
 import '../../domain/entities/reminder.dart';
 import '../../domain/entities/reminder_category.dart';
 import '../../domain/entities/reminder_template.dart';
-import '../../services/alarm_scheduler_service.dart';
 import '../../services/ringtone_service.dart';
 import '../bloc/reminder/reminder_bloc.dart';
 import '../bloc/reminder/reminder_event.dart';
@@ -82,7 +81,6 @@ class _CreateEditReminderSheetState extends State<CreateEditReminderSheet> {
   late int _maxSnoozeCount;
   late String _alarmSoundId;
   late bool _isImportant;
-  bool _syncPowerOffClock = false;
   late List<ChecklistItem> _checklist;
 
   String? _validationError;
@@ -350,12 +348,6 @@ class _CreateEditReminderSheetState extends State<CreateEditReminderSheet> {
       context
           .read<ReminderBloc>()
           .add(SaveReminder(reminder, locale: s.locale));
-      if (_syncPowerOffClock) {
-        AlarmSchedulerService.instance.syncToSystemClockPowerOff(
-          scheduledAt: dt,
-          title: title,
-        );
-      }
     } else {
       final batchId = _uuid.v4();
       final batch = scheduledList
@@ -1096,29 +1088,6 @@ class _CreateEditReminderSheetState extends State<CreateEditReminderSheet> {
                               value: _isImportant,
                               onChanged: (v) =>
                                   setState(() => _isImportant = v),
-                            ),
-                            SwitchListTile.adaptive(
-                              contentPadding: EdgeInsets.zero,
-                              title: Text(
-                                s.powerOffAlarmSyncLabel,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 13.5,
-                                ),
-                              ),
-                              subtitle: Text(
-                                s.powerOffAlarmSyncDesc,
-                                style: const TextStyle(fontSize: 11.5),
-                              ),
-                              secondary: const Icon(
-                                Icons.power_settings_new_rounded,
-                                color: AppColors.auroraCyan,
-                              ),
-                              value: _syncPowerOffClock,
-                              onChanged: (v) =>
-                                  setState(() => _syncPowerOffClock = v),
                             ),
                             const SizedBox(height: 12),
 

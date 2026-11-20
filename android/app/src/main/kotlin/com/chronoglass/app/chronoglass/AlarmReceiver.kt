@@ -10,12 +10,12 @@ import com.chronoglass.app.chronoglass.NativeAlarmScheduler.putExtrasFromPayload
 
 /**
  * Native BroadcastReceiver handling:
- * 1. Exact alarm triggers (ACTION_TRIGGER_ALARM & poweroffalarm.action.ALARM)
- *    -> IMMEDIATELY invokes AlarmRingerController.startRinging() (popup notification + sound + vibration + lockscreen launch)
- *    AND promotes to AlarmForegroundService.
- * 2. Device boot / power-on / Direct Boot (LOCKED_BOOT_COMPLETED, BOOT_COMPLETED, QUICKBOOT_POWERON)
- *    -> Recovers all alarms from Direct-Boot SharedPreferences AND SQLite chronoglass.db,
- *    reschedules future alarms, and immediately rings any alarm that occurred while powered off!
+ * 1. Exact timestamp alarm triggers (ACTION_TRIGGER_ALARM & poweroffalarm.action.ALARM)
+ *    - Verifies exact timestamp (prevents any premature trigger if a kernel fires early!)
+ *    - Immediately invokes AlarmRingerController.startRinging() + AlarmForegroundService
+ * 2. Device boot / Direct Boot (LOCKED_BOOT_COMPLETED, BOOT_COMPLETED, QUICKBOOT_POWERON)
+ *    - Recovers all alarms from DeviceProtectedStorage & SQLite chronoglass.db
+ *    - Reschedules all future exact-date alarms & catches up missed power-off alarms
  */
 class AlarmReceiver : BroadcastReceiver() {
 
@@ -31,11 +31,20 @@ class AlarmReceiver : BroadcastReceiver() {
                 ?: findDueAlarmInStorageOrDb(context)
                 ?: return
 
+            val now = System.currentTimeMillis()
+            // Strict exact-date/time guard: if a buggy OEM fires more than 10 seconds early,
+            // reschedule for the exact target millisecond instead of ringing on the wrong date/time!
+            if (payload.triggerAtMillis > now + 10_000L) {
+                Log.w(TAG, "Alarm ${payload.id} fired early! Rescheduling for exact timestamp ${payload.triggerAtMillis}")
+                NativeAlarmScheduler.schedule(context, payload, persist = true)
+                return
+            }
+
             triggerAlarmImmediately(context, payload)
             return
         }
 
-        // Boot / Direct Boot (before PIN unlock) / Power-On / Package update / Time change recovery
+        // Boot / Direct Boot / Power-On / Package update / Time change recovery
         if (action == Intent.ACTION_BOOT_COMPLETED ||
             action == Intent.ACTION_LOCKED_BOOT_COMPLETED ||
             action == Intent.ACTION_REBOOT ||
@@ -51,41 +60,34 @@ class AlarmReceiver : BroadcastReceiver() {
     }
 
     private fun triggerAlarmImmediately(context: Context, payload: NativeAlarmPayload) {
-        // 1. Synchronously start popup notification, MediaPlayer (USAGE_ALARM), Vibrator & WakeLock right inside onReceive!
         AlarmRingerController.startRinging(context, payload)
-
-        // 2. Also start AlarmForegroundService to keep process at Foreground Service priority
         try {
             val serviceIntent = Intent(context, AlarmForegroundService::class.java).apply {
                 putExtrasFromPayload(payload)
             }
             ContextCompat.startForegroundService(context, serviceIntent)
         } catch (e: Exception) {
-            Log.w(TAG, "ForegroundService promotion deferred (AlarmRingerController already ringing): ${e.message}")
+            Log.w(TAG, "ForegroundService promotion deferred (AlarmRingerController active): ${e.message}")
         }
     }
 
     private fun findDueAlarmInStorageOrDb(context: Context): NativeAlarmPayload? {
         val now = System.currentTimeMillis()
         val windowMs = 12L * 60L * 60L * 1000L
-        val saved = AlarmStorageHelper.getAllAlarms(context)
-        return saved
-            .filter { it.triggerAtMillis <= now + 60_000L && now - it.triggerAtMillis <= windowMs }
+        return AlarmStorageHelper.getAllAlarms(context)
+            .filter { it.triggerAtMillis <= now + 10_000L && now - it.triggerAtMillis <= windowMs }
             .maxByOrNull { it.triggerAtMillis }
     }
 
     private fun recoverAlarmsOnBoot(context: Context) {
         val now = System.currentTimeMillis()
-        // 12-hour catch-up window so any alarm that fired while the phone was powered off rings on power-on
         val missedWindowMs = 12L * 60L * 60L * 1000L
         val allAlarms = mutableMapOf<String, NativeAlarmPayload>()
 
-        // 1. Load from Direct-Boot SharedPreferences
         for (alarm in AlarmStorageHelper.getAllAlarms(context)) {
             allAlarms[alarm.id] = alarm
         }
 
-        // 2. Also load from SQLite chronoglass.db (if available after user unlock)
         try {
             val dbFile = context.getDatabasePath("chronoglass.db")
             if (dbFile.exists()) {
@@ -117,7 +119,7 @@ class AlarmReceiver : BroadcastReceiver() {
                 db.close()
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Direct-Boot SQLite read skipped (using DeviceProtectedStorage): ${e.message}")
+            Log.w(TAG, "Direct-Boot SQLite read skipped: ${e.message}")
         }
 
         var missedToTrigger: NativeAlarmPayload? = null
@@ -135,7 +137,7 @@ class AlarmReceiver : BroadcastReceiver() {
         }
 
         if (missedToTrigger != null) {
-            Log.i(TAG, "Power-on recovery ringing alarm that occurred during power-off: ${missedToTrigger.id}")
+            Log.i(TAG, "Power-on recovery ringing missed alarm: ${missedToTrigger.id}")
             triggerAlarmImmediately(context, missedToTrigger)
         }
     }

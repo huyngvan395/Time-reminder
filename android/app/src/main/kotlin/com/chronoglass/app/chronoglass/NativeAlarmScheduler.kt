@@ -5,19 +5,17 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
-import android.provider.AlarmClock
 import android.util.Log
-import java.util.Calendar
 
 /**
- * Schedules exact system-clock alarms using:
- * 1. Android's highest-priority AlarmManager.setAlarmClock API (bypasses Doze & shows status bar alarm icon)
- * 2. Hardware RTC Power-Off Alarm drivers (Qualcomm com.qualcomm.qti.poweroffalarm & RTC_POWEROFF_WAKEUP type 5)
- * 3. Optional System Clock hardware sync (AlarmClock.ACTION_SET_ALARM with EXTRA_SKIP_UI=true)
+ * Schedules exact calendar-date & time alarms using:
+ * 1. Android's highest-priority AlarmManager.setAlarmClock API (exact epoch triggerAtMillis)
+ * 2. Exact-epoch Hardware RTC Power-Off drivers (Qualcomm com.qualcomm.qti.poweroffalarm & RTC_POWEROFF_WAKEUP)
+ * Never delegates to the stock Clock app (which ignores future calendar dates).
  */
 object NativeAlarmScheduler {
     private const val TAG = "ChronoGlassScheduler"
-    private const val RTC_POWEROFF_WAKEUP = 5 // Qualcomm/MTK hardware power-off wakeup type
+    private const val RTC_POWEROFF_WAKEUP = 5
 
     fun requestCodeFor(id: String): Int = (id.hashCode() and 0x7FFFFFFF)
 
@@ -82,7 +80,7 @@ object NativeAlarmScheduler {
             Log.e(TAG, "Failed to schedule alarm ${payload.id}: ${e.message}", e)
         }
 
-        // Program Hardware Power-Off RTC Alarm (Qualcomm & MediaTek/OEM kernel RTC_POWEROFF_WAKEUP)
+        // Exact-epoch Hardware Power-Off RTC Alarm (respects exact calendar date + time)
         scheduleHardwarePowerOffRtc(context, alarmManager, payload, alarmPendingIntent)
     }
 
@@ -92,7 +90,6 @@ object NativeAlarmScheduler {
         payload: NativeAlarmPayload,
         alarmPendingIntent: PendingIntent
     ) {
-        // 1. Qualcomm QTI PowerOffAlarm daemon broadcast
         try {
             val qtiIntent = Intent("org.codeaurora.poweroffalarm.action.SET_ALARM").apply {
                 setPackage("com.qualcomm.qti.poweroffalarm")
@@ -102,7 +99,6 @@ object NativeAlarmScheduler {
         } catch (_: Exception) {
         }
 
-        // 2. Kernel RTC_POWEROFF_WAKEUP (type 5) for MediaTek / ColorOS / MIUI devices
         try {
             alarmManager.setExactAndAllowWhileIdle(
                 RTC_POWEROFF_WAKEUP,
@@ -110,32 +106,6 @@ object NativeAlarmScheduler {
                 alarmPendingIntent
             )
         } catch (_: Exception) {
-        }
-    }
-
-    /**
-     * Registers the alarm time into the device's built-in System Clock app silently (EXTRA_SKIP_UI = true).
-     * Because the OEM System Clock has firmware privileges to program the motherboard PMIC power-on timer,
-     * this allows the phone to physically power on from a 100% shut-down state and ring!
-     */
-    fun syncToSystemClockPowerOff(context: Context, triggerAtMillis: Long, title: String): Boolean {
-        return try {
-            val cal = Calendar.getInstance().apply { timeInMillis = triggerAtMillis }
-            val hour = cal.get(Calendar.HOUR_OF_DAY)
-            val minute = cal.get(Calendar.MINUTE)
-            val sysIntent = Intent(AlarmClock.ACTION_SET_ALARM).apply {
-                putExtra(AlarmClock.EXTRA_HOUR, hour)
-                putExtra(AlarmClock.EXTRA_MINUTES, minute)
-                putExtra(AlarmClock.EXTRA_MESSAGE, "ChronoGlass: $title")
-                putExtra(AlarmClock.EXTRA_VIBRATE, true)
-                putExtra(AlarmClock.EXTRA_SKIP_UI, true)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            context.startActivity(sysIntent)
-            true
-        } catch (e: Exception) {
-            Log.w(TAG, "syncToSystemClockPowerOff warning: ${e.message}")
-            false
         }
     }
 
