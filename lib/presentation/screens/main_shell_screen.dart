@@ -7,6 +7,7 @@ import '../../core/localization/app_strings.dart';
 import '../../core/theme/app_colors.dart';
 import '../../domain/entities/reminder.dart';
 import '../../services/alarm_scheduler_service.dart';
+import '../../services/permission_guard_service.dart';
 import '../bloc/history/history_cubit.dart';
 import '../bloc/reminder/reminder_bloc.dart';
 import '../bloc/reminder/reminder_event.dart';
@@ -49,13 +50,25 @@ class _MainShellScreenState extends State<MainShellScreen>
       (_) => _checkDueReminders(),
     );
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      // Automatically request notification permission on first launch so Heads-Up Popup
+      // banners and alarms work immediately without requiring the user to open Settings first.
+      try {
+        await PermissionGuardService.instance.requestNotificationPermission();
+      } catch (_) {}
+
       final pending =
           AlarmSchedulerService.instance.consumePendingLaunchEvent();
       if (pending != null) {
         _handleNotificationEvent(pending);
       } else {
         _checkDueReminders();
+      }
+
+      // Ensure all active reminders in SQLite are registered in the Native Android Alarm Engine
+      if (mounted) {
+        final locale = context.read<SettingsCubit>().state.locale;
+        context.read<ReminderBloc>().add(ResyncAllAlarms(locale: locale));
       }
     });
   }

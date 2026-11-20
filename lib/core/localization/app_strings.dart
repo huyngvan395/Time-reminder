@@ -63,6 +63,12 @@ class AppStrings {
   String get categoryLabel => isVi ? 'Danh mục & Thẻ màu' : 'Category & Tag';
   String get addCustomTag => isVi ? '+ Thẻ mới' : '+ New Tag';
   String get importantFlag => isVi ? 'Đánh dấu quan trọng' : 'Mark as Important';
+  String get powerOffAlarmSyncLabel => isVi
+      ? 'Báo thức cả khi tắt nguồn (Đồng bộ RTC Đồng hồ máy)'
+      : 'Ring even when powered off (Sync System Clock RTC)';
+  String get powerOffAlarmSyncDesc => isVi
+      ? 'Tự động ghi giờ báo thức vào chip RTC Đồng hồ hệ thống để máy tự bật nguồn và reo chuông.'
+      : 'Syncs alarm time with the hardware System Clock RTC to wake the device from power-off.';
   String get snoozeConfig => isVi ? 'Cấu hình báo lại (Snooze)' : 'Snooze Configuration';
   String get maxSnooze => isVi ? 'Số lần báo lại tối đa' : 'Max snooze count';
   String get dismissChallengeLabel => isVi ? 'Thử thách tắt báo thức' : 'Dismiss Challenge';

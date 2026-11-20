@@ -1,5 +1,6 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Alarm, Notification, Boot & System Reliability Permissions -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <!-- Alarm, Notification, Power-Off RTC, Boot & System Reliability Permissions -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
@@ -11,6 +12,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.DISABLE_KEYGUARD" />
+    <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+    <uses-permission android:name="org.codeaurora.permission.POWER_OFF_ALARM" />
 
     <application
         android:label="ChronoGlass"
@@ -37,18 +41,21 @@
             </intent-filter>
         </activity>
 
-        <!-- 100% Native ChronoGlass System-Clock Alarm Engine -->
+        <!-- 100% Native ChronoGlass System-Clock & Power-Off Alarm Engine -->
         <receiver
             android:name=".AlarmReceiver"
             android:enabled="true"
-            android:exported="false"
-            android:directBootAware="true">
-            <intent-filter>
+            android:exported="true"
+            android:directBootAware="true"
+            tools:ignore="ExportedReceiver">
+            <intent-filter priority="999">
                 <action android:name="com.chronoglass.app.chronoglass.ACTION_TRIGGER_ALARM" />
+                <action android:name="org.codeaurora.poweroffalarm.action.ALARM" />
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
                 <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="android.intent.action.REBOOT" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
                 <action android:name="android.intent.action.TIME_SET" />
                 <action android:name="android.intent.action.TIMEZONE_CHANGED" />
@@ -59,8 +66,9 @@
         <receiver
             android:name=".AlarmActionReceiver"
             android:enabled="true"
-            android:exported="false"
-            android:directBootAware="true">
+            android:exported="true"
+            android:directBootAware="true"
+            tools:ignore="ExportedReceiver">
             <intent-filter>
                 <action android:name="com.chronoglass.app.chronoglass.ACTION_DISMISS_ALARM" />
                 <action android:name="com.chronoglass.app.chronoglass.ACTION_SNOOZE_ALARM" />
@@ -74,7 +82,7 @@
             android:directBootAware="true"
             android:foregroundServiceType="mediaPlayback" />
 
-        <!-- flutter_local_notifications receivers (used for pre-reminders & iOS) -->
+        <!-- flutter_local_notifications receivers (parallel heads-up popup & pre-reminders) -->
         <receiver
             android:exported="false"
             android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver" />
@@ -101,6 +109,9 @@
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT" />
             <data android:mimeType="text/plain" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SET_ALARM" />
         </intent>
     </queries>
 </manifest>

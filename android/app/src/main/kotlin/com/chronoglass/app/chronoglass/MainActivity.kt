@@ -91,11 +91,21 @@ class MainActivity : FlutterActivity() {
                     }
                     "stopRinging" -> {
                         pendingPayload = null
-                        AlarmForegroundService.stopAlarm(this)
+                        AlarmRingerController.stopRinging(this)
                         result.success(true)
                     }
                     "isNativeRinging" -> {
-                        result.success(AlarmForegroundService.isRinging)
+                        result.success(AlarmRingerController.isRinging)
+                    }
+                    "syncPowerOffAlarm" -> {
+                        val triggerAtMillis = call.argument<Number>("triggerAtMillis")?.toLong() ?: 0L
+                        val title = call.argument<String>("title") ?: "ChronoGlass"
+                        val ok = if (triggerAtMillis > 0L) {
+                            NativeAlarmScheduler.syncToSystemClockPowerOff(this, triggerAtMillis, title)
+                        } else {
+                            false
+                        }
+                        result.success(ok)
                     }
                     "getPendingAlarm" -> {
                         val active = pendingPayload ?: AlarmStorageHelper.getRingingAlarm(this)
