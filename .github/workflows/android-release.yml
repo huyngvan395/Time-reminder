@@ -1,0 +1,133 @@
+name: Build & Release ChronoGlass APK
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - 'README.md'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build Release APK & Publish GitHub Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Set up Flutter (stable)
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze & Run Tests
+        run: |
+          flutter analyze
+          flutter test
+
+      - name: Build Android Release APK
+        run: flutter build apk --release
+
+      - name: Prepare Release Artifact & Metadata
+        id: meta
+        run: |
+          TAG="v1.0.${{ github.run_number }}"
+          APK_NAME="ChronoGlass-${TAG}.apk"
+          RELEASE_DATE=$(TZ='Asia/Ho_Chi_Minh' date +'%d/%m/%Y')
+          cp build/app/outputs/flutter-apk/app-release.apk "${APK_NAME}"
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "apk_name=${APK_NAME}" >> $GITHUB_OUTPUT
+          echo "release_date=${RELEASE_DATE}" >> $GITHUB_OUTPUT
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: "ChronoGlass ${{ steps.meta.outputs.tag }}"
+          body: |
+            ## ChronoGlass Automated Release (${{ steps.meta.outputs.tag }})
+            - **Ngày phát hành:** `${{ steps.meta.outputs.release_date }}`
+            - **Commit:** `${{ github.sha }}`
+            - **Tải trực tiếp:** `${{ steps.meta.outputs.apk_name }}` (Android 6.0+ / API 23+)
+          files: |
+            ${{ steps.meta.outputs.apk_name }}
+          generate_release_notes: true
+
+      - name: Auto-update README.md with latest release version & download link
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+          APK_NAME: ${{ steps.meta.outputs.apk_name }}
+          RELEASE_DATE: ${{ steps.meta.outputs.release_date }}
+          REPO: ${{ github.repository }}
+        run: |
+          python3 - << 'EOF'
+          import os, re
+
+          tag = os.environ["TAG"]
+          apk_name = os.environ["APK_NAME"]
+          release_date = os.environ["RELEASE_DATE"]
+          repo = os.environ["REPO"]
+          download_url = f"https://github.com/{repo}/releases/download/{tag}/{apk_name}"
+          releases_url = f"https://github.com/{repo}/releases"
+
+          with open("README.md", "r", encoding="utf-8") as f:
+              content = f.read()
+
+          new_badge = (
+              f"<!-- VERSION_BADGE_START -->"
+              f'<img src="https://img.shields.io/badge/Phiên_bản-{tag}-38BDF8?style=flat-square" alt="Latest Version" />'
+              f"<!-- VERSION_BADGE_END -->"
+          )
+          content = re.sub(
+              r"<!-- VERSION_BADGE_START -->.*?<!-- VERSION_BADGE_END -->",
+              new_badge,
+              content,
+              flags=re.DOTALL,
+          )
+
+          new_release_info = (
+              "<!-- RELEASE_INFO_START -->\n"
+              f"- **Phiên bản mới nhất:** `{tag}`\n"
+              f"- **Cập nhật lần cuối:** `{release_date}`\n"
+              f"- **Tải trực tiếp file cài đặt:** 👉 **[Tải {apk_name}]({download_url})**\n"
+              f"- **Trang tổng hợp các bản phát hành:** [GitHub Releases]({releases_url})\n"
+              "<!-- RELEASE_INFO_END -->"
+          )
+          content = re.sub(
+              r"<!-- RELEASE_INFO_START -->.*?<!-- RELEASE_INFO_END -->",
+              new_release_info,
+              content,
+              flags=re.DOTALL,
+          )
+
+          with open("README.md", "w", encoding="utf-8") as f:
+              f.write(content)
+          EOF
+
+      - name: Commit & Push updated README.md
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          if ! git diff --cached --quiet; then
+            git commit -m "docs(release): update README download link to ${{ steps.meta.outputs.tag }} [skip ci]"
+            git push origin HEAD:main
+          fi
