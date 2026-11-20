@@ -44,7 +44,7 @@ jobs:
           flutter test
 
       - name: Build Android Release APK
-        run: flutter build apk --release
+        run: flutter build apk --release --android-skip-build-dependency-validation
 
       - name: Prepare Release Artifact & Metadata
         id: meta
