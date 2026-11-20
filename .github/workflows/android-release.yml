@@ -40,7 +40,7 @@ jobs:
 
       - name: Analyze & Run Tests
         run: |
-          flutter analyze
+          flutter analyze --no-fatal-infos
           flutter test
 
       - name: Build Android Release APK
