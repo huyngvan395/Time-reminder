@@ -26,6 +26,7 @@
             android:hardwareAccelerated="true"
             android:showWhenLocked="true"
             android:turnScreenOn="true"
+            android:directBootAware="true"
             android:windowSoftInputMode="adjustResize">
             <meta-data
                 android:name="io.flutter.embedding.android.NormalTheme"
@@ -36,24 +37,44 @@
             </intent-filter>
         </activity>
 
-        <!-- android_alarm_manager_plus service & receivers -->
-        <service
-            android:name="dev.fluttercommunity.plus.androidalarmmanager.AlarmService"
-            android:permission="android.permission.BIND_JOB_SERVICE"
-            android:exported="false" />
+        <!-- 100% Native ChronoGlass System-Clock Alarm Engine -->
         <receiver
-            android:name="dev.fluttercommunity.plus.androidalarmmanager.AlarmBroadcastReceiver"
-            android:exported="false" />
-        <receiver
-            android:name="dev.fluttercommunity.plus.androidalarmmanager.RebootBroadcastReceiver"
+            android:name=".AlarmReceiver"
             android:enabled="true"
-            android:exported="false">
+            android:exported="false"
+            android:directBootAware="true">
             <intent-filter>
+                <action android:name="com.chronoglass.app.chronoglass.ACTION_TRIGGER_ALARM" />
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
             </intent-filter>
         </receiver>
 
-        <!-- flutter_local_notifications receivers -->
+        <receiver
+            android:name=".AlarmActionReceiver"
+            android:enabled="true"
+            android:exported="false"
+            android:directBootAware="true">
+            <intent-filter>
+                <action android:name="com.chronoglass.app.chronoglass.ACTION_DISMISS_ALARM" />
+                <action android:name="com.chronoglass.app.chronoglass.ACTION_SNOOZE_ALARM" />
+            </intent-filter>
+        </receiver>
+
+        <service
+            android:name=".AlarmForegroundService"
+            android:enabled="true"
+            android:exported="false"
+            android:directBootAware="true"
+            android:foregroundServiceType="mediaPlayback" />
+
+        <!-- flutter_local_notifications receivers (used for pre-reminders & iOS) -->
         <receiver
             android:exported="false"
             android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver" />
@@ -70,29 +91,6 @@
         <receiver
             android:exported="false"
             android:name="com.dexterous.flutterlocalnotifications.ActionBroadcastReceiver" />
-
-        <!-- ChronoGlass Native Exact Alarm Trigger Receiver -->
-        <receiver
-            android:name=".AlarmTriggerReceiver"
-            android:enabled="true"
-            android:exported="false" />
-
-        <!-- ChronoGlass custom Boot & Timezone Reschedule Receiver -->
-        <receiver
-            android:name=".BootRescheduleReceiver"
-            android:enabled="true"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED" />
-                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
-                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
-                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
-                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
-                <action android:name="android.intent.action.TIME_SET" />
-                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
-                <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
-            </intent-filter>
-        </receiver>
 
         <meta-data
             android:name="flutterEmbedding"

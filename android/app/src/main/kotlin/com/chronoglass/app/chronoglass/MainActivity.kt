@@ -8,6 +8,8 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.PowerManager
 import android.provider.Settings
 import android.view.WindowManager
@@ -17,9 +19,7 @@ import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
     private val systemChannelName = "com.chronoglass.app/system"
-    private var methodChannel: MethodChannel? = null
-    private var pendingAlarmId: String? = null
-    private var pendingAlarmTitle: String? = null
+    private val nativeAlarmChannelName = "com.chronoglass.app/native_alarm"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -35,124 +35,185 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun extractAlarmIntent(intent: Intent?, dispatchNow: Boolean) {
-        if (intent == null) return
-        val reminderId = intent.getStringExtra(AlarmTriggerReceiver.EXTRA_REMINDER_ID)
-        val reminderTitle = intent.getStringExtra(AlarmTriggerReceiver.EXTRA_REMINDER_TITLE)
-        val isAlarm = intent.getBooleanExtra(AlarmTriggerReceiver.EXTRA_IS_ALARM_LAUNCH, false)
-        if (isAlarm && !reminderId.isNullOrEmpty()) {
-            pendingAlarmId = reminderId
-            pendingAlarmTitle = reminderTitle
+        val payload = NativeAlarmScheduler.payloadFromIntent(intent) ?: return
+        val isAlarm = intent?.getBooleanExtra(AlarmReceiver.EXTRA_IS_ALARM_LAUNCH, false) == true
+        if (isAlarm || AlarmForegroundService.isRinging) {
+            pendingPayload = payload
             if (dispatchNow) {
-                methodChannel?.invokeMethod(
-                    "onNativeAlarmTriggered",
-                    mapOf("reminderId" to reminderId, "title" to (reminderTitle ?: ""))
-                )
+                deliverAlarmToFlutter(payload)
             }
         }
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        methodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, systemChannelName)
-        methodChannel?.setMethodCallHandler { call, result ->
-            when (call.method) {
-                "getPendingAlarm" -> {
-                    val id = pendingAlarmId
-                    val title = pendingAlarmTitle
-                    pendingAlarmId = null
-                    pendingAlarmTitle = null
-                    if (id != null) {
-                        result.success(mapOf("reminderId" to id, "title" to (title ?: "")))
-                    } else {
-                        result.success(null)
-                    }
-                }
-                "scheduleNativeAlarm" -> {
-                    val id = call.argument<String>("id")
-                    val title = call.argument<String>("title") ?: "ChronoGlass Alarm"
-                    val triggerAtMs = call.argument<Number>("triggerAtMs")?.toLong()
-                    if (id != null && triggerAtMs != null) {
-                        AlarmTriggerReceiver.scheduleExact(this, id, title, triggerAtMs)
-                        result.success(true)
-                    } else {
-                        result.success(false)
-                    }
-                }
-                "cancelNativeAlarm" -> {
-                    val id = call.argument<String>("id")
-                    if (id != null) {
-                        AlarmTriggerReceiver.cancel(this, id)
-                    }
-                    result.success(true)
-                }
-                "canScheduleExactAlarms" -> {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                        val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
-                        result.success(alarmManager.canScheduleExactAlarms())
-                    } else {
-                        result.success(true)
-                    }
-                }
-                "openExactAlarmSettings" -> {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                        val intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
-                            data = Uri.parse("package:$packageName")
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+        nativeAlarmChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            nativeAlarmChannelName
+        ).also { channel ->
+            channel.setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "scheduleAlarm" -> {
+                        val id = call.argument<String>("id") ?: ""
+                        val triggerAtMillis = call.argument<Number>("triggerAtMillis")?.toLong() ?: 0L
+                        val title = call.argument<String>("title") ?: "ChronoGlass Alarm"
+                        val body = call.argument<String>("body") ?: ""
+                        val ringtonePath = call.argument<String>("ringtonePath")
+                            ?: "assets/sounds/morning_marimba.wav"
+                        val isAsset = call.argument<Boolean>("isAsset") ?: true
+                        val dismissChallenge = call.argument<String>("dismissChallenge") ?: "slide"
+                        val snoozeMinutes = call.argument<Number>("snoozeMinutes")?.toInt() ?: 5
+
+                        if (id.isNotEmpty() && triggerAtMillis > 0L) {
+                            val payload = NativeAlarmPayload(
+                                id = id,
+                                triggerAtMillis = triggerAtMillis,
+                                title = title,
+                                body = body,
+                                ringtonePath = ringtonePath,
+                                isAsset = isAsset,
+                                dismissChallenge = dismissChallenge,
+                                snoozeMinutes = snoozeMinutes
+                            )
+                            NativeAlarmScheduler.schedule(this, payload, persist = true)
+                            result.success(true)
+                        } else {
+                            result.success(false)
                         }
-                        startActivity(intent)
                     }
-                    result.success(true)
-                }
-                "canUseFullScreenIntent" -> {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                        result.success(nm.canUseFullScreenIntent())
-                    } else {
+                    "cancelAlarm" -> {
+                        val id = call.argument<String>("id") ?: ""
+                        if (id.isNotEmpty()) {
+                            NativeAlarmScheduler.cancel(this, id)
+                        }
                         result.success(true)
                     }
-                }
-                "openFullScreenIntentSettings" -> {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                        val intent = Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT).apply {
-                            data = Uri.parse("package:$packageName")
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        }
-                        startActivity(intent)
-                    } else {
-                        val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
-                            putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        }
-                        startActivity(intent)
+                    "stopRinging" -> {
+                        pendingPayload = null
+                        AlarmForegroundService.stopAlarm(this)
+                        result.success(true)
                     }
-                    result.success(true)
-                }
-                "isIgnoringBatteryOptimizations" -> {
-                    val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-                    result.success(pm.isIgnoringBatteryOptimizations(packageName))
-                }
-                "openBatteryOptimizationSettings" -> {
-                    try {
-                        val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-                            data = Uri.parse("package:$packageName")
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        }
-                        startActivity(intent)
-                    } catch (e: Exception) {
-                        val fallback = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).apply {
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        }
-                        startActivity(fallback)
+                    "isNativeRinging" -> {
+                        result.success(AlarmForegroundService.isRinging)
                     }
-                    result.success(true)
+                    "getPendingAlarm" -> {
+                        val active = pendingPayload ?: AlarmStorageHelper.getRingingAlarm(this)
+                        pendingPayload = null
+                        if (active != null) {
+                            result.success(active.toMap())
+                        } else {
+                            result.success(null)
+                        }
+                    }
+                    "openAppSettings" -> {
+                        openApplicationDetailsSettings()
+                        result.success(true)
+                    }
+                    else -> result.notImplemented()
                 }
-                "setLockScreenAlarmMode" -> {
-                    val enabled = call.argument<Boolean>("enabled") ?: false
-                    enableLockScreenAlarmMode(enabled)
-                    result.success(true)
-                }
-                else -> result.notImplemented()
             }
+        }
+
+        systemChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            systemChannelName
+        ).also { channel ->
+            channel.setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "getPendingAlarm" -> {
+                        val active = pendingPayload ?: AlarmStorageHelper.getRingingAlarm(this)
+                        pendingPayload = null
+                        if (active != null) {
+                            result.success(active.toMap())
+                        } else {
+                            result.success(null)
+                        }
+                    }
+                    "openAppSettings" -> {
+                        openApplicationDetailsSettings()
+                        result.success(true)
+                    }
+                    "canScheduleExactAlarms" -> {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                            val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+                            result.success(alarmManager.canScheduleExactAlarms())
+                        } else {
+                            result.success(true)
+                        }
+                    }
+                    "openExactAlarmSettings" -> {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                            val intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+                                data = Uri.parse("package:$packageName")
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            startActivity(intent)
+                        }
+                        result.success(true)
+                    }
+                    "canUseFullScreenIntent" -> {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                            result.success(nm.canUseFullScreenIntent())
+                        } else {
+                            result.success(true)
+                        }
+                    }
+                    "openFullScreenIntentSettings" -> {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                            val intent = Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT).apply {
+                                data = Uri.parse("package:$packageName")
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            startActivity(intent)
+                        } else {
+                            val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                                putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            startActivity(intent)
+                        }
+                        result.success(true)
+                    }
+                    "isIgnoringBatteryOptimizations" -> {
+                        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+                        result.success(pm.isIgnoringBatteryOptimizations(packageName))
+                    }
+                    "openBatteryOptimizationSettings" -> {
+                        try {
+                            val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                                data = Uri.parse("package:$packageName")
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            startActivity(intent)
+                        } catch (e: Exception) {
+                            val fallback = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).apply {
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            startActivity(fallback)
+                        }
+                        result.success(true)
+                    }
+                    "setLockScreenAlarmMode" -> {
+                        val enabled = call.argument<Boolean>("enabled") ?: false
+                        enableLockScreenAlarmMode(enabled)
+                        result.success(true)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+        }
+    }
+
+    private fun openApplicationDetailsSettings() {
+        try {
+            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = Uri.parse("package:$packageName")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(intent)
+        } catch (_: Exception) {
         }
     }
 
@@ -181,6 +242,39 @@ class MainActivity : FlutterActivity() {
                     WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
                     WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
             )
+        }
+    }
+
+    override fun onDestroy() {
+        if (nativeAlarmChannel != null) {
+            nativeAlarmChannel = null
+        }
+        if (systemChannel != null) {
+            systemChannel = null
+        }
+        super.onDestroy()
+    }
+
+    companion object {
+        private val mainHandler = Handler(Looper.getMainLooper())
+        private var nativeAlarmChannel: MethodChannel? = null
+        private var systemChannel: MethodChannel? = null
+        private var pendingPayload: NativeAlarmPayload? = null
+
+        fun deliverAlarmToFlutter(payload: NativeAlarmPayload) {
+            pendingPayload = payload
+            mainHandler.post {
+                nativeAlarmChannel?.invokeMethod("onAlarmFired", payload.toMap())
+            }
+        }
+
+        fun deliverNativeActionToFlutter(action: String, id: String, snoozeMinutes: Int) {
+            mainHandler.post {
+                nativeAlarmChannel?.invokeMethod(
+                    "onNativeAlarmAction",
+                    mapOf("action" to action, "id" to id, "snoozeMinutes" to snoozeMinutes)
+                )
+            }
         }
     }
 }

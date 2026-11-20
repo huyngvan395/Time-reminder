@@ -138,6 +138,15 @@ class AppStrings {
   String get oemGuardHint => isVi
       ? 'Trên các máy MIUI / ColorOS / OneUI, hãy tắt giới hạn pin nền để hệ điều hành không đóng ứng dụng.'
       : 'On MIUI / ColorOS / OneUI devices, disable background battery restrictions so alarms are never killed.';
+  String get openBgLockscreenPermsBtn => isVi
+      ? '⚙️ Cấp quyền chạy ngầm & Màn hình khóa'
+      : '⚙️ Background & Lockscreen Permissions';
+  String get oemStep1 => isVi
+      ? '1. Bật Tự khởi chạy (Auto-startup) & Cho phép chạy ngầm.'
+      : '1. Enable Auto-startup & Allow background activity.';
+  String get oemStep2 => isVi
+      ? '2. Vào Quản lý quyền -> bật Hiển thị trên màn hình khóa & Cửa sổ bật lên nền.'
+      : '2. In Permission Manager -> enable Show on Lockscreen & Display pop-up window in background.';
   String get appearanceSection => isVi ? 'Giao diện & Ngôn ngữ' : 'Appearance & Language';
   String get themeDarkAurora => isVi ? 'Frosted Dark Aurora' : 'Frosted Dark Aurora';
   String get themeCrystalLight => isVi ? 'Crystal Light' : 'Crystal Light';

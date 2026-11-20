@@ -220,7 +220,8 @@ class _MainShellScreenState extends State<MainShellScreen>
       reminderBloc.add(
         SnoozeReminder(
           target,
-          minutes: target.snoozeIntervalMinutes,
+          minutes:
+              event.snoozeMinutesOverride ?? target.snoozeIntervalMinutes,
           locale: s.locale,
         ),
       );

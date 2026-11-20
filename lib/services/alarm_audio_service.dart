@@ -7,10 +7,13 @@ import 'package:vibration/vibration.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import '../core/constants/app_constants.dart';
 import '../domain/entities/ringtone_item.dart';
+import 'alarm_scheduler_service.dart';
 import 'ringtone_service.dart';
 
 /// Controls alarm audio playback with gradual volume ramp-up, continuous vibration,
 /// screen wake lock, Android lock-screen display flags, and live ringtone previewing.
+/// Automatically delegates to Android's native `AlarmForegroundService` when a native alarm
+/// is already ringing so audio never plays twice.
 class AlarmAudioService {
   AlarmAudioService._();
   static final AlarmAudioService instance = AlarmAudioService._();
@@ -34,9 +37,6 @@ class AlarmAudioService {
     bool escalateVolume = true,
     bool vibrate = true,
   }) async {
-    await stopAlarm();
-    _isPlaying = true;
-
     try {
       await WakelockPlus.enable();
       if (Platform.isAndroid) {
@@ -45,6 +45,20 @@ class AlarmAudioService {
         });
       }
     } catch (_) {}
+
+    // If Android native AlarmForegroundService is already playing USAGE_ALARM audio,
+    // do not start a duplicate Flutter AudioPlayer instance.
+    if (Platform.isAndroid) {
+      final nativeRinging =
+          await AlarmSchedulerService.instance.isNativeRinging();
+      if (nativeRinging) {
+        _isPlaying = true;
+        return;
+      }
+    }
+
+    await _stopLocalAudioAndVibrationOnly();
+    _isPlaying = true;
 
     final resolved = RingtoneService.instance.resolveRingtone(
       soundId,
@@ -95,7 +109,6 @@ class AlarmAudioService {
         );
       }
     } catch (_) {
-      // Graceful fallback to built-in default ringtone
       try {
         await _player.play(
           AssetSource(AppConstants.builtInRingtones.first.assetPath!),
@@ -169,7 +182,7 @@ class AlarmAudioService {
     } catch (_) {}
   }
 
-  Future<void> stopAlarm() async {
+  Future<void> _stopLocalAudioAndVibrationOnly() async {
     _isPlaying = false;
     playingPreviewId.value = null;
     _volumeRampTimer?.cancel();
@@ -186,6 +199,12 @@ class AlarmAudioService {
     try {
       await Vibration.cancel();
     } catch (_) {}
+  }
+
+  /// Stops both Flutter audio/vibration AND Android's native AlarmForegroundService.
+  Future<void> stopAlarm() async {
+    await _stopLocalAudioAndVibrationOnly();
+    await AlarmSchedulerService.instance.stopNativeRinging();
 
     try {
       await WakelockPlus.disable();
