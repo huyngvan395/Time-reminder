@@ -62,9 +62,9 @@ object AlarmOverlayManager {
 
                 val timeStr = SimpleDateFormat("HH:mm", Locale.getDefault())
                     .format(Date(System.currentTimeMillis()))
+                val displayTitle = payload.title.trim().ifEmpty { "Nhắc nhở" }
                 pill.findViewById<TextView>(R.id.alarm_pill_time)?.text = timeStr
-                pill.findViewById<TextView>(R.id.alarm_pill_subtitle)?.text =
-                    "ChronoGlass: ${payload.title}"
+                pill.findViewById<TextView>(R.id.alarm_pill_subtitle)?.text = displayTitle
 
                 // Tap pill body -> open FullScreenAlarmScreen in ChronoGlass
                 pill.findViewById<View>(R.id.alarm_pill_root)?.setOnClickListener {

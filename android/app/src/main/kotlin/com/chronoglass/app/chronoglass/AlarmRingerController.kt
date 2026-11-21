@@ -191,21 +191,22 @@ object AlarmRingerController {
 
         val timeStr = SimpleDateFormat("HH:mm", Locale.getDefault())
             .format(Date(System.currentTimeMillis()))
+        val displayTitle = payload.title.trim().ifEmpty { "Nhắc nhở" }
 
-        // Custom dark pill RemoteViews matching the sleek floating alarm banner style
+        // Custom dark pill RemoteViews showing the reminder title clearly without extra prefix
         val customPillViews = RemoteViews(context.packageName, R.layout.overlay_alarm_pill).apply {
             setTextViewText(R.id.alarm_pill_time, timeStr)
-            setTextViewText(R.id.alarm_pill_subtitle, "ChronoGlass: ${payload.title}")
+            setTextViewText(R.id.alarm_pill_subtitle, displayTitle)
             setOnClickPendingIntent(R.id.alarm_pill_root, fullScreenPendingIntent)
             setOnClickPendingIntent(R.id.alarm_pill_snooze, snoozePending)
             setOnClickPendingIntent(R.id.alarm_pill_stop, dismissPending)
         }
 
-        val bodyText = if (payload.body.isNotBlank()) payload.body else "ChronoGlass: ${payload.title}"
+        val bodyText = if (payload.body.isNotBlank()) payload.body else displayTitle
 
         return NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle("$timeStr • ${payload.title}")
+            .setContentTitle(displayTitle)
             .setContentText(bodyText)
             .setCustomContentView(customPillViews)
             .setCustomHeadsUpContentView(customPillViews)
